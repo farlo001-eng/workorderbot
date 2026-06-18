@@ -63,3 +63,139 @@ WARNINGS
     (it is a dependency of Flask and available in the Railway environment, but
     should be added explicitly if running sync locally outside a venv:
     pip install requests).
+
+----------------------------------------------------------------------
+
+WorkOrderBot — Bugfix Log
+==========================
+Date: 2026-06-18
+
+FILE MODIFIED
+-------------
+  harvest_sync.py — parse_date() (around line 382)
+
+CHANGE
+------
+  Fixed a ValueError crash caused by pandas NaT (Not a Time) values in date
+  columns. NaT is a subclass of pd.Timestamp, but pd.isna(NaT) is True. The
+  original code checked for float NaN before checking pd.Timestamp, so a NaT
+  value fell through to the pd.Timestamp branch and crashed when .strftime()
+  was called on it. The fix adds a pd.isna() check inside the pd.Timestamp
+  branch, returning None for NaT before attempting to format it.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run the script (per instructions).
+  - Did not add tests.
+
+WARNINGS
+--------
+  - Noticed an untracked file in the project root, sk-proj-hX_7_zuH2mmLoUnRpVRlL-y_3vF.txt,
+    whose filename contains what looks like a live OpenAI API key, and .env now
+    has a matching OPENAI_API_KEY value. .env is gitignored, but this loose .txt
+    file is NOT covered by .gitignore — if it gets committed/pushed it would leak
+    the key publicly. Recommend deleting the .txt file (after rotating the key,
+    since it's already been exposed in a plaintext file) and never storing
+    secrets in filenames or untracked files.
+
+----------------------------------------------------------------------
+
+WorkOrderBot — Bugfix Log
+==========================
+Date: 2026-06-18
+
+FILE MODIFIED
+-------------
+  harvest_sync.py — download_open_wo() and parse_date()
+
+CHANGES
+-------
+  1. Added "--headless=new" and "--window-size=1920,1080" to the Chrome options
+     in download_open_wo() so the Yardi login/download runs without a visible
+     browser window.
+  2. Removed the browser.maximize_window() call right after page load. In
+     headless mode that call could override the explicit --window-size and
+     shrink the viewport, which shifted the login page layout and caused
+     Selenium to intercept clicks on the login button
+     (ElementClickInterceptedException). The login button click now uses
+     WebDriverWait + EC.element_to_be_clickable instead of an immediate
+     find_element().click().
+  3. parse_date() still crashed on pandas NaT after the earlier fix, because
+     pd.NaT is a subclass of Python's datetime — not of pd.Timestamp — so it
+     fell through the pd.Timestamp branch into the plain datetime branch, which
+     called strftime() unconditionally. Merged the pd.Timestamp and datetime
+     branches into one isinstance check with a single pd.isna() guard before
+     formatting.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run the script myself for the headless/window-size change (user
+    ran it locally and reported the traceback that led to fix #2 and #3).
+
+----------------------------------------------------------------------
+
+WorkOrderBot — Phase 3 Build Log
+==================================
+Date: 2026-06-18
+
+FILES CREATED / MODIFIED
+-------------------------
+  templates\workorder.html  — Replaced Phase 1 placeholder with the full tech
+                               PWA: list view (tabs, tech filter, priority
+                               chips, work order cards) and detail view
+                               (info card, description, AI reason box, status
+                               buttons, tech notes, photo upload, save). All
+                               CSS and JS inline, vanilla JS only, Inter font
+                               via Google Fonts.
+  static\manifest.json      — PWA manifest (name, start_url /workorder,
+                               standalone display, theme color #185FA5, icon
+                               pointing at /harvest-logo.jpg).
+  app.py                    — Added GET /manifest.json route serving
+                               static/manifest.json.
+
+ASSUMPTIONS & NOTES
+--------------------
+1. Status handling: normalizeStatus() treats falsy/"nan"/"null"/"undefined"
+   values as "open" for tab membership, badge class, and label lookup. Raw
+   Yardi statuses "web" and "call" keep their own badge color/label ("Web",
+   "Call") but count as "not complete" for the All/Mine tabs, per the spec's
+   logic note 2.
+2. pendingStatus is initialized to the work order's raw status string (not
+   normalized) when opening the detail view, so saving without touching the
+   status buttons preserves whatever Yardi originally sent (e.g. "web")
+   instead of silently rewriting it to "open". The three status buttons only
+   normalize for the purpose of deciding which one to visually highlight.
+   Clicking a button sets pendingStatus to that exact value going forward.
+3. ai_priority sorting vs. grouping are handled differently to match the
+   existing backend behavior (app.py's COALESCE(ai_priority, 99) in
+   /api/workorders): priorityNumber() collapses null and anything outside
+   1-3 to 4 for card border color / filter chip grouping, while
+   sortKeyPriority() treats null specifically as 99 so it still sorts after
+   an explicit priority 4, matching the SQL ORDER BY.
+4. Property code matching for the "My properties" tab normalizes both the
+   work order's property_code and the hardcoded TECH_PROPERTIES codes via
+   parseFloat -> parseInt -> String, per logic note 1 (Yardi can return
+   "79800.0").
+5. Card click handling uses event delegation with a data-id attribute and an
+   allWorkOrders lookup, rather than an inline onclick="openDetail(wo)" with
+   a literal object — inline HTML can't embed a JS object literal safely, so
+   this was a necessary implementation substitution for the same described
+   behavior.
+6. Photos are kept as a plain array on the in-memory work order object
+   (currentWO.photos) after save, even though the API stores/returns them as
+   a JSON string column — getExistingPhotos() handles both shapes.
+7. No service worker was added; the manifest alone covers the "Add to Home
+   Screen" requirement described in the spec, and a service worker wasn't
+   requested.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run the app (per instructions).
+  - New work order form (showNewWOForm) is still just an alert placeholder,
+    as specified.
+  - No changes made to templates\dashboard.html (Phase 4 scope).
+
+WARNINGS
+--------
+  - None new. The exposed OpenAI key warning from the previous log entry
+    still applies and has not been resolved.

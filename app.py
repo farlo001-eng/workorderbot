@@ -281,6 +281,11 @@ def logo():
     return send_from_directory("static", "harvest-logo.jpg")
 
 
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory("static", "manifest.json")
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
