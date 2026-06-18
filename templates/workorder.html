@@ -54,8 +54,10 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
 .badge-nan { background: #FAECE7; color: #993C1D; }
 
 .wo-desc { font-size: 13px; font-weight: 500; color: #1a1a1a; margin-bottom: 5px; line-height: 1.3; }
+.wo-brief { font-size: 11px; color: #888; margin-bottom: 4px; font-style: italic; }
 .wo-meta { display: flex; gap: 8px; flex-wrap: wrap; }
 .wo-meta span { font-size: 11px; color: #666; }
+.wo-tech { margin-top: 4px; font-size: 11px; color: #666; }
 .ai-reason { font-size: 11px; color: #888; margin-top: 5px; font-style: italic; border-top: 0.5px solid #F0F0F0; padding-top: 4px; }
 
 .empty-state { text-align: center; color: #888; font-size: 13px; padding: 40px 20px; }
@@ -90,6 +92,12 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
 .ai-box { background: #E6F1FB; border-left: 3px solid #378ADD; border-radius: 2px 10px 10px 2px; padding: 10px 12px; }
 .ai-label { font-size: 11px; color: #185FA5; font-weight: 500; margin-bottom: 4px; }
 .ai-text { font-size: 12px; color: #0C447C; line-height: 1.5; }
+
+.caller-info { font-size: 12px; color: #333; }
+.caller-info a { color: #185FA5; text-decoration: none; }
+.access-box { background: #FAEEDA; border-left: 3px solid #EF9F27; border-radius: 2px 10px 10px 2px; padding: 10px 12px; }
+.access-label { font-size: 11px; color: #854F0B; font-weight: 500; margin-bottom: 4px; }
+.access-text { font-size: 12px; color: #633806; line-height: 1.5; }
 
 .status-row { display: flex; gap: 6px; }
 .status-btn { flex: 1; padding: 8px 4px; border-radius: 8px; border: 0.5px solid #E0E0E0; font-size: 12px; text-align: center; color: #666; background: white; cursor: pointer; }
@@ -129,9 +137,9 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
   <div id="tech-selector" style="display:none">
     <select id="tech-select">
       <option value="">Select your name...</option>
-      <option value="asmith">Antonio Smith</option>
-      <option value="dhall">Daniel Hall</option>
-      <option value="morton">Jonathan Morton</option>
+      <option value="Antonio Smith">Antonio Smith</option>
+      <option value="Daniel Hall">Daniel Hall</option>
+      <option value="Jonathan Morton">Jonathan Morton</option>
     </select>
   </div>
 
@@ -177,16 +185,34 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
   <!-- Scrollable body -->
   <div class="detail-body">
 
-    <!-- Details card -->
+    <!-- Section 1: Property & Assignment -->
     <div class="section-card" id="detail-info"></div>
 
-    <!-- Description card -->
+    <!-- Section 2: Caller info (only shown if caller_name exists) -->
+    <div class="section-card" id="caller-info-card" style="display:none">
+      <div class="section-label">Caller info</div>
+      <div id="caller-info" class="caller-info"></div>
+    </div>
+
+    <!-- Section 3: Full description -->
     <div class="section-card">
-      <div class="section-label">Description</div>
+      <div class="section-label">Full description</div>
       <div id="detail-description" class="desc-text"></div>
     </div>
 
-    <!-- AI reason box (only shown if ai_reason exists) -->
+    <!-- Section 4: Yardi brief -->
+    <div class="section-card">
+      <div class="section-label">Yardi brief</div>
+      <div id="detail-brief" class="desc-text"></div>
+    </div>
+
+    <!-- Section 5: Access notes (only shown if non-empty) -->
+    <div id="access-box" class="access-box" style="display:none">
+      <div class="access-label">Access notes</div>
+      <div id="access-notes-text" class="access-text"></div>
+    </div>
+
+    <!-- Section 6: AI reason box (only shown if ai_reason exists) -->
     <div id="ai-box" class="ai-box" style="display:none">
       <div class="ai-label">✦ AI priority reason</div>
       <div id="ai-reason-text" class="ai-text"></div>
@@ -240,13 +266,13 @@ let currentWO = null;
 let pendingStatus = '';
 let pendingPhotos = [];
 
-const TECH_PROPERTIES = {
-  asmith: ['79800','79200','75000','78200','78600','78700','79100','78800','73800'],
-  dhall:  ['74100','78400','77700','76400','73500','76700','76500'],
-  morton: ['73600','77900','79400','78950','78900','79600','71300','79700','79500','77500','79300','73700']
-};
-
 // --- helpers ---
+
+function isEmptyValue(v) {
+  if (v === null || v === undefined) return true;
+  const s = String(v).trim().toLowerCase();
+  return s === '' || s === 'nan' || s === 'none' || s === 'null';
+}
 
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
@@ -262,13 +288,6 @@ function truncate(str, n) {
   if (!str) return '';
   const s = String(str);
   return s.length > n ? s.slice(0, n) + '…' : s;
-}
-
-function normalizeCode(code) {
-  if (!code) return '';
-  const f = parseFloat(code);
-  if (isNaN(f)) return String(code).trim();
-  return String(parseInt(f, 10));
 }
 
 function normalizeStatus(status) {
@@ -336,12 +355,20 @@ function renderCard(wo) {
   const n = priorityNumber(wo.ai_priority);
   const sClass = normalizeStatus(wo.status);
   const label = statusLabel(wo.status);
-  const desc = (wo.brief_desc && wo.brief_desc.trim())
-    ? wo.brief_desc
+
+  const fallbackDesc = !isEmptyValue(wo.brief_desc)
+    ? wo.brief_desc.trim()
     : (wo.description || '').slice(0, 80);
-  const aiReasonHtml = (wo.ai_reason && wo.ai_reason.trim())
-    ? `<div class="ai-reason">${escapeHtml(truncate(wo.ai_reason, 80))}</div>`
+  const mainDesc = !isEmptyValue(wo.ai_summary) ? wo.ai_summary.trim() : fallbackDesc;
+
+  const briefVal = !isEmptyValue(wo.brief_desc) ? wo.brief_desc.trim() : '';
+  const briefHtml = (briefVal && briefVal !== mainDesc)
+    ? `<div class="wo-brief">${escapeHtml(briefVal)}</div>`
     : '';
+
+  const techDisplay = !isEmptyValue(wo.tech_name)
+    ? wo.tech_name
+    : (!isEmptyValue(wo.employee) ? wo.employee : 'Unassigned');
 
   return `
     <div class="wo-card p${n}" data-id="${escapeHtml(wo.id)}">
@@ -349,13 +376,16 @@ function renderCard(wo) {
         <span class="wo-id">WO# ${escapeHtml(wo.id)} · ${wo.days_open ?? 0} days</span>
         <span class="status-badge badge-${sClass}">${label}</span>
       </div>
-      <div class="wo-desc">${escapeHtml(desc)}</div>
+      <div class="wo-desc">${escapeHtml(mainDesc)}</div>
+      ${briefHtml}
       <div class="wo-meta">
         <span>🏢 ${escapeHtml(wo.property_name || wo.property_code || '')}</span>
         <span>🏠 ${escapeHtml(wo.unit_number || '')}</span>
         <span>🔧 ${escapeHtml(wo.category || '')}</span>
       </div>
-      ${aiReasonHtml}
+      <div class="wo-tech">
+        <span>👤 ${escapeHtml(techDisplay)}</span>
+      </div>
     </div>
   `;
 }
@@ -368,8 +398,7 @@ function renderList() {
   } else if (currentTab === 'mine') {
     list = list.filter(wo => normalizeStatus(wo.status) !== 'complete');
     if (currentTech) {
-      const codes = TECH_PROPERTIES[currentTech] || [];
-      list = list.filter(wo => codes.includes(normalizeCode(wo.property_code)));
+      list = list.filter(wo => wo.tech_name === currentTech);
     }
   } else if (currentTab === 'complete') {
     list = list.filter(wo => normalizeStatus(wo.status) === 'complete');
@@ -421,31 +450,75 @@ function openDetail(wo) {
 
   const n = priorityNumber(wo.ai_priority);
 
-  document.getElementById('detail-title').textContent = wo.brief_desc || wo.description || `WO# ${wo.id}`;
+  const fallbackTitle = !isEmptyValue(wo.brief_desc)
+    ? wo.brief_desc.trim()
+    : truncate(wo.description || '', 80);
+  const titleText = !isEmptyValue(wo.ai_summary) ? wo.ai_summary.trim() : fallbackTitle;
+
+  document.getElementById('detail-title').textContent = titleText || `WO# ${wo.id}`;
   document.getElementById('detail-meta').innerHTML = `
     <span class="priority-badge-${n}">P${n}</span>
     <span>WO# ${escapeHtml(wo.id)}</span>
     <span>${wo.days_open ?? 0} days open</span>
   `;
 
+  const techDisplay = !isEmptyValue(wo.tech_name)
+    ? wo.tech_name
+    : (!isEmptyValue(wo.employee) ? wo.employee : 'Unassigned');
+
+  // Section 1: Property & Assignment
   const infoRows = [
     ['Property', wo.property_name || wo.property_code || '—'],
     ['Unit', wo.unit_number || '—'],
     ['Category', wo.category || '—'],
     ['Yardi priority', wo.priority || '—'],
-    ['Employee', wo.employee || '—'],
-    ['Created', wo.created_date || '—'],
+    ['Assigned to', techDisplay],
     ['Scheduled', wo.scheduled_date || '—'],
+    ['Call date', wo.created_date || '—'],
+    ['Days open', wo.days_open ?? '—'],
   ];
   document.getElementById('detail-info').innerHTML = infoRows.map(([k, v]) =>
     `<div class="detail-row"><span class="detail-key">${escapeHtml(k)}</span><span class="detail-val">${escapeHtml(v)}</span></div>`
   ).join('');
 
-  document.getElementById('detail-description').textContent =
-    wo.description || wo.brief_desc || 'No description provided.';
+  // Section 2: Caller info
+  const callerCard = document.getElementById('caller-info-card');
+  if (!isEmptyValue(wo.caller_name)) {
+    const callerLines = [
+      `<div class="detail-row"><span class="detail-key">Caller</span><span class="detail-val">${escapeHtml(wo.caller_name)}</span></div>`,
+    ];
+    if (!isEmptyValue(wo.caller_phone)) {
+      callerLines.push(`<div class="detail-row"><span class="detail-key">Phone</span><span class="detail-val"><a href="tel:${escapeHtml(wo.caller_phone)}">${escapeHtml(wo.caller_phone)}</a></span></div>`);
+    }
+    if (!isEmptyValue(wo.caller_email)) {
+      callerLines.push(`<div class="detail-row"><span class="detail-key">Email</span><span class="detail-val"><a href="mailto:${escapeHtml(wo.caller_email)}">${escapeHtml(wo.caller_email)}</a></span></div>`);
+    }
+    document.getElementById('caller-info').innerHTML = callerLines.join('');
+    callerCard.style.display = 'block';
+  } else {
+    callerCard.style.display = 'none';
+  }
 
+  // Section 3: Full description
+  document.getElementById('detail-description').textContent = !isEmptyValue(wo.full_description)
+    ? wo.full_description
+    : (wo.description || 'No description provided.');
+
+  // Section 4: Yardi brief
+  document.getElementById('detail-brief').textContent = !isEmptyValue(wo.brief_desc) ? wo.brief_desc : '—';
+
+  // Section 5: Access notes
+  const accessBox = document.getElementById('access-box');
+  if (!isEmptyValue(wo.access_notes)) {
+    accessBox.style.display = 'block';
+    document.getElementById('access-notes-text').textContent = wo.access_notes;
+  } else {
+    accessBox.style.display = 'none';
+  }
+
+  // Section 6: AI reason
   const aiBox = document.getElementById('ai-box');
-  if (wo.ai_reason && wo.ai_reason.trim()) {
+  if (!isEmptyValue(wo.ai_reason)) {
     aiBox.style.display = 'block';
     document.getElementById('ai-reason-text').textContent = wo.ai_reason;
   } else {

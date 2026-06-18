@@ -276,3 +276,69 @@ WARNINGS
 --------
   - None new. The exposed OpenAI key warning from earlier log entries
     still applies and has not been resolved.
+
+----------------------------------------------------------------------
+
+WorkOrderBot — PWA New Fields Build Log
+==========================================
+Date: 2026-06-18
+
+FILE MODIFIED
+-------------
+  templates\workorder.html
+
+CHANGES
+-------
+  1. Cards (renderCard()): primary line now shows wo.ai_summary, falling
+     back to brief_desc then the first 80 chars of description. A new
+     italic .wo-brief line shows the original Yardi Brief Desc. beneath it,
+     but only when it differs from whatever ended up as the primary line
+     (so nothing is shown twice when ai_summary is missing and brief_desc
+     is used as the fallback instead). Added a .wo-tech line showing
+     tech_name, falling back to employee, then "Unassigned". Removed the
+     old inline ai-reason snippet from the card (ai_reason now only shows
+     in the detail view's AI box; the card's primary line carries the AI
+     summary instead).
+  2. Detail view (openDetail()): title now prefers ai_summary. The info
+     card (Section 1) gained "Assigned to" (tech_name/employee/Unassigned),
+     "Call date" (renamed from "Created"), and "Days open" rows. Added a
+     new Caller Info card (Section 2, hidden unless caller_name is set)
+     with tel:/mailto: links for phone/email. Split the old single
+     "Description" card into "Full description" (Section 3: full_description
+     falling back to description) and "Yardi brief" (Section 4: brief_desc).
+     Added an amber Access Notes box (Section 5, hidden unless set). AI
+     reason box (Section 6) unchanged other than using the new isEmptyValue
+     check. Status/tech notes/photos/save sections untouched.
+  3. "My properties" filter: tech-select dropdown now uses full tech names
+     ("Antonio Smith", etc.) as both value and label. renderList()'s 'mine'
+     branch filters by `wo.tech_name === currentTech` directly. Removed the
+     TECH_PROPERTIES property-code map and the now-unused normalizeCode()
+     helper entirely, since tech assignment is no longer derived from a
+     hardcoded property list.
+  4. Added isEmptyValue(v) helper — treats null/undefined/""/"nan"/"none"/
+     "null" (case-insensitive) as empty. Used for every new optional field
+     (ai_summary, caller_name, caller_phone, caller_email, access_notes,
+     full_description, tech_name) and reused for ai_reason for consistency,
+     since these values come through pandas/Yardi and can arrive as the
+     literal string "nan" rather than a real empty value.
+
+DEVIATION FROM SPEC
+--------------------
+  Spec's card .wo-brief rule says "only show if it differs from ai_summary".
+  Implemented instead as "differs from whatever line is actually shown as
+  the primary description" (which equals ai_summary whenever it's present,
+  but falls back to brief_desc/description when ai_summary is empty). This
+  avoids visually duplicating the same text on two lines when ai_summary is
+  missing (e.g. OPENAI_API_KEY unset, in which case harvest_sync.py sets
+  AI Summary to "" for every row) and brief_desc becomes the primary line.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run the app (per instructions).
+  - Save/update logic, photo handling, and API endpoints unchanged, per the
+    DO NOT list.
+
+WARNINGS
+--------
+  - None new. The exposed OpenAI key warning from earlier log entries
+    still applies and has not been resolved.
