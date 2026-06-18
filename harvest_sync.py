@@ -155,7 +155,7 @@ def download_open_wo():
         "download.default_directory": DOWNLOAD_DIR
     })
     chrome_options.add_argument("--enable-javascript")
-    chrome_options.add_argument("--headless=new")
+    # chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--window-size=1920,1080")
 
     chrome_service = ChromeService(ChromeDriverManager().install())
@@ -172,14 +172,14 @@ def download_open_wo():
         wait.until(EC.element_to_be_clickable((By.NAME, 'button'))).click()
 
         # MFA
-        time.sleep(60)
+        time.sleep(120)
         mfa_code = get_mfa_code()
         print(f"MFA code: {mfa_code}")
 
         wait.until(EC.element_to_be_clickable((By.ID, 'verificationCode'))).send_keys(mfa_code)
         time.sleep(2)
         wait.until(EC.element_to_be_clickable((By.ID, 'verificationSubmit'))).click()
-        time.sleep(10)
+        time.sleep(5)
 
         # Navigate to Voyager
         element = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, 'Voyager 7s')))
@@ -197,6 +197,8 @@ def download_open_wo():
 
         # Work Orders report
         browser.get('https://www.yardiasptx11.com/33613harbert/pages/menu.aspx?sMenuSet=res')
+
+        time.sleep(30)
         browser.find_element(By.ID, 'miFavorite').click()
         browser.find_element(By.LINK_TEXT, 'Work Orders').click()
         time.sleep(5)
