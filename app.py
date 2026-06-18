@@ -196,6 +196,13 @@ def sync_workorders():
                     days_open = ?,
                     ai_priority = ?,
                     ai_reason = ?,
+                    access_notes = ?,
+                    full_description = ?,
+                    caller_name = ?,
+                    caller_phone = ?,
+                    caller_email = ?,
+                    tech_name = ?,
+                    ai_summary = ?,
                     source = COALESCE(source, 'yardi')
                 WHERE id = ?
             """, (
@@ -208,6 +215,10 @@ def sync_workorders():
                 wo.get("actual_start"), wo.get("actual_finish"),
                 wo.get("actual_hours"), wo.get("days_open"),
                 wo.get("ai_priority"), wo.get("ai_reason"),
+                wo.get("access_notes"), wo.get("full_description"),
+                wo.get("caller_name"), wo.get("caller_phone"),
+                wo.get("caller_email"), wo.get("tech_name"),
+                wo.get("ai_summary"),
                 wo_id
             ))
             updated += 1
@@ -218,8 +229,10 @@ def sync_workorders():
                 (id, property_code, property_name, unit_number, description, brief_desc,
                  category, priority, status, created_date, scheduled_date, completed_date,
                  employee, actual_start, actual_finish, actual_hours, tech_notes, photos,
-                 source, days_open, ai_priority, ai_reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '[]', 'yardi', ?, ?, ?)
+                 source, days_open, ai_priority, ai_reason,
+                 access_notes, full_description, caller_name, caller_phone, caller_email,
+                 tech_name, ai_summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '[]', 'yardi', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 wo_id, wo.get("property_code"), wo.get("property_name"),
                 wo.get("unit_number"), wo.get("description"), wo.get("brief_desc"),
@@ -227,7 +240,11 @@ def sync_workorders():
                 wo.get("created_date"), wo.get("scheduled_date"), wo.get("completed_date"),
                 wo.get("employee"), wo.get("actual_start"), wo.get("actual_finish"),
                 wo.get("actual_hours"), wo.get("days_open"),
-                wo.get("ai_priority"), wo.get("ai_reason")
+                wo.get("ai_priority"), wo.get("ai_reason"),
+                wo.get("access_notes"), wo.get("full_description"),
+                wo.get("caller_name"), wo.get("caller_phone"),
+                wo.get("caller_email"), wo.get("tech_name"),
+                wo.get("ai_summary")
             ))
             inserted += 1
 

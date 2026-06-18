@@ -1,11 +1,13 @@
 """
 harvest_sync.py
 ===============
-Full pipeline for WorkOrderBot:
+Downloads and triages open work orders from Yardi:
   1. Log into Yardi via Selenium, download open work orders as .xls
   2. Run AI triage (GPT-4o-mini) to assign AI Priority + AI Reason
   3. Save enriched data to I:\PycharmProjects\WorkOrderBot\WorkOrders.xlsx
-  4. POST to Railway sync endpoint
+
+Does NOT sync to Railway. Run sync_workorders.py separately afterward to
+POST the saved WorkOrders.xlsx to the Railway sync endpoint.
 
 Run with: py harvest_sync.py
 """
@@ -16,7 +18,6 @@ import glob
 import json
 import time
 import shutil
-import requests
 import openpyxl
 import pandas as pd
 
@@ -41,8 +42,6 @@ import subprocess
 load_dotenv()
 
 OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY")
-RAILWAY_URL     = os.getenv("RAILWAY_URL", "").rstrip("/")
-SYNC_API_KEY    = os.getenv("SYNC_API_KEY", "harvest-workorder-2026-secure-key")
 
 # Yardi credentials from yardi.xlsx (existing approach)
 YARDI_CREDS_PATH = r"I:\PycharmProjects\yardi.xlsx"
@@ -50,12 +49,16 @@ YARDI_CREDS_PATH = r"I:\PycharmProjects\yardi.xlsx"
 # Where Yardi downloads land
 DOWNLOAD_DIR    = r"G:\Harvest Apartment Management\Work Orders\Data"
 
-# Final output path (read by sync step)
+# Final output path (read separately by sync_workorders.py)
 OUTPUT_PATH     = r"I:\PycharmProjects\WorkOrderBot\WorkOrders.xlsx"
 OUTPUT_SHEET    = "Open WO Data"
 
 OPENAI_MODEL    = "gpt-4o-mini"
 MAX_ROWS_FOR_AI = 500
+
+# Property/tech lookup table, loaded once in main()
+PROPERTIES_XLSX_PATH = r"I:\PycharmProjects\WorkOrderBot\Properties.xlsx"
+PROPERTIES_MAP = {}
 
 EMERGENCY_KEYWORDS = [
     "smell gas", "gas leak", "smells like gas", "carbon monoxide",
@@ -70,6 +73,35 @@ RISKY_WORDS = [
     "no water", "no running water",
     "sewage", "sewer backup", "sewage backup",
 ]
+
+# ---------- PROPERTIES LOOKUP ----------
+
+def normalize_code(val):
+    if val is None:
+        return ""
+    try:
+        return str(int(float(str(val).strip())))
+    except Exception:
+        return str(val).strip()
+
+
+def load_properties_map(path: str) -> dict:
+    """
+    Returns dict keyed by normalized property code string.
+    E.g. {"79800": {"property_name": "CityCenter Place", "tech_name": "Antonio Smith"}, ...}
+    """
+    df = pd.read_excel(path, dtype=str)
+    result = {}
+    for _, row in df.iterrows():
+        code = normalize_code(row.get("Property", ""))
+        if not code:
+            continue
+        result[code] = {
+            "property_name": str(row.get("Property Name", "") or "").strip(),
+            "tech_name":     str(row.get("Maintenance Tech", "") or "").strip(),
+        }
+    return result
+
 
 # ---------- STEP 1: YARDI DOWNLOAD ----------
 
@@ -177,11 +209,15 @@ def download_open_wo():
         # Open WOs (report type 1)
         Select(browser.find_element(By.ID, 'ReportType_DropDownList')).select_by_value('1')
 
-        browser.find_element(By.ID, 'chkActualHours_CheckBox').click()
-        browser.find_element(By.ID, 'chkEmployee_CheckBox').click()
         browser.find_element(By.ID, 'chkProblemDescription_CheckBox').click()
         browser.find_element(By.ID, 'chkTechnicianNotes_CheckBox').click()
-        time.sleep(20)
+        browser.find_element(By.ID, 'chkAccessNotes_CheckBox').click()
+        browser.find_element(By.ID, 'chkFullDescription_CheckBox').click()
+        browser.find_element(By.ID, 'chkCallerName_CheckBox').click()
+        browser.find_element(By.ID, 'chkCallerPhone_CheckBox').click()
+        browser.find_element(By.ID, 'chkCallerEmail_CheckBox').click()
+        browser.find_element(By.ID, 'chkActualHours_CheckBox').click()
+        time.sleep(5)
 
         browser.find_element(By.ID, 'Display_Button').click()
         time.sleep(10)
@@ -236,6 +272,16 @@ def load_open_work_orders(xls_path: str) -> pd.DataFrame:
     else:
         df["Days Open"] = None
 
+    return df
+
+
+def enrich_with_property_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Join property_name and tech_name onto df via the Property code, using PROPERTIES_MAP."""
+    def get_prop(code, field):
+        key = normalize_code(code)
+        return PROPERTIES_MAP.get(key, {}).get(field, "")
+    df["property_name"] = df["Property"].apply(lambda x: get_prop(x, "property_name"))
+    df["tech_name"]     = df["Property"].apply(lambda x: get_prop(x, "tech_name"))
     return df
 
 
@@ -321,16 +367,53 @@ def ai_priority_for_row(client, row) -> tuple:
     return priority, reason
 
 
+def generate_ai_summary(client, row) -> str:
+    brief    = str(row.get("Brief Desc.", "") or "")
+    problem  = str(row.get("Problem Description", "") or "")
+    full     = str(row.get("Full Description", "") or "")
+    notes    = str(row.get("Technician Notes", "") or "")
+    category = str(row.get("Category", "") or "")
+    unit     = str(row.get("Unit", "") or "")
+
+    prompt = f"""
+Summarize this maintenance work order in ONE sentence, max 20 words.
+Be specific and factual. No filler words. Start with the issue, not "resident reports".
+
+Category: {category}
+Unit: {unit}
+Brief: {brief}
+Problem: {problem[:300]}
+Full description: {full[:300]}
+Tech notes: {notes[:200]}
+
+Respond with ONLY the summary sentence, nothing else.
+"""
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You write concise maintenance work order summaries."},
+                {"role": "user",   "content": prompt},
+            ],
+            max_tokens=60,
+            timeout=15,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return brief or problem[:80] or "No description available."
+
+
 def triage_work_orders(df: pd.DataFrame) -> pd.DataFrame:
     if not OPENAI_API_KEY:
         print("WARNING: OPENAI_API_KEY not set. Skipping AI triage, all set to priority 4.")
         df["AI Priority"] = 4
         df["AI Reason"] = "AI triage skipped — no API key."
+        df["AI Summary"] = ""
         return df
 
     client = OpenAI(api_key=OPENAI_API_KEY)
     df = df.copy()
-    ai_priorities, ai_reasons = [], []
+    ai_priorities, ai_reasons, ai_summaries = [], [], []
     limit = min(len(df), MAX_ROWS_FOR_AI)
     print(f"Running AI triage on {limit} work orders...")
 
@@ -345,15 +428,18 @@ def triage_work_orders(df: pd.DataFrame) -> pd.DataFrame:
             p, reason = ai_priority_for_row(client, row)
             ai_priorities.append(p)
             ai_reasons.append(reason)
+        ai_summaries.append(generate_ai_summary(client, row))
 
     # Any rows beyond limit: routine
     extra = len(df) - limit
     if extra > 0:
         ai_priorities.extend([4] * extra)
         ai_reasons.extend(["Not triaged by AI (row limit)."] * extra)
+        ai_summaries.extend([""] * extra)
 
     df["AI Priority"] = ai_priorities
     df["AI Reason"] = ai_reasons
+    df["AI Summary"] = ai_summaries
     return df
 
 
@@ -378,102 +464,41 @@ def save_to_xlsx(df: pd.DataFrame, output_path: str, sheet_name: str):
     print(f"Saved {len(df)} work orders to: {output_path} [{sheet_name}]")
 
 
-# ---------- STEP 5: SYNC TO RAILWAY ----------
-
-def parse_date(val):
-    if val is None:
-        return None
-    if isinstance(val, float) and pd.isna(val):
-        return None
-    if isinstance(val, (pd.Timestamp, datetime)):
-        if pd.isna(val):
-            return None
-        return val.strftime("%Y-%m-%d")
-    return str(val).strip() if val else None
-
-
-def sync_to_railway(df: pd.DataFrame):
-    if not RAILWAY_URL:
-        print("WARNING: RAILWAY_URL not set. Skipping Railway sync.")
-        return
-
-    work_orders = []
-    for _, row in df.iterrows():
-        wo_id = str(row.get("WO#", "")).strip()
-        if not wo_id:
-            continue
-
-        wo = {
-            "id":             wo_id,
-            "property_code":  str(row.get("Property", "") or "").strip(),
-            "property_name":  str(row.get("Property Name", "") or "").strip(),
-            "unit_number":    str(row.get("Unit", "") or "").strip(),
-            "description":    str(row.get("Problem Description", "") or "").strip(),
-            "brief_desc":     str(row.get("Brief Desc.", "") or "").strip(),
-            "category":       str(row.get("Category", "") or "").strip(),
-            "priority":       str(row.get("Priority", "") or "").strip(),
-            "status":         str(row.get("Status", "open") or "open").strip().lower(),
-            "created_date":   parse_date(row.get("Call Date")),
-            "scheduled_date": parse_date(row.get("Scheduled Date")),
-            "completed_date": parse_date(row.get("Completed Date")),
-            "employee":       str(row.get("Employee", "") or "").strip(),
-            "actual_start":   parse_date(row.get("Actual Start")),
-            "actual_finish":  parse_date(row.get("Actual Finish")),
-            "actual_hours":   float(row["Actual Hours"]) if pd.notna(row.get("Actual Hours")) else 0,
-            "days_open":      int(row["Days Open"]) if pd.notna(row.get("Days Open")) else 0,
-            "ai_priority":    int(row["AI Priority"]) if pd.notna(row.get("AI Priority")) else None,
-            "ai_reason":      str(row.get("AI Reason", "") or "").strip(),
-        }
-        work_orders.append(wo)
-
-    if not work_orders:
-        print("No work orders to sync.")
-        return
-
-    url = f"{RAILWAY_URL}/workorders/sync"
-    headers = {
-        "Content-Type": "application/json",
-        "X-API-Key": SYNC_API_KEY,
-    }
-    print(f"Syncing {len(work_orders)} work orders to {url}...")
-    try:
-        resp = requests.post(url, headers=headers, json={"work_orders": work_orders}, timeout=60)
-        resp.raise_for_status()
-        result = resp.json()
-        print(f"Sync complete. Inserted: {result.get('inserted','?')}, Updated: {result.get('updated','?')}")
-    except requests.exceptions.RequestException as e:
-        print(f"ERROR: Railway sync failed — {e}")
-
-
 # ---------- MAIN ----------
 
 def main():
+    global PROPERTIES_MAP
+
     print("=" * 50)
     print(f"harvest_sync.py — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("=" * 50)
 
+    try:
+        PROPERTIES_MAP = load_properties_map(PROPERTIES_XLSX_PATH)
+        print(f"Loaded {len(PROPERTIES_MAP)} properties from {PROPERTIES_XLSX_PATH}.")
+    except Exception as e:
+        print(f"WARNING: Could not load properties file ({e}). Continuing without property enrichment.")
+        PROPERTIES_MAP = {}
+
     # Step 1: Download from Yardi
-    print("\n[1/4] Downloading open work orders from Yardi...")
+    print("\n[1/3] Downloading open work orders from Yardi...")
     xls_path = download_open_wo()
 
     # Step 2: Load and clean
-    print("\n[2/4] Loading and cleaning data...")
+    print("\n[2/3] Loading and cleaning data...")
     df = load_open_work_orders(xls_path)
+    df = enrich_with_property_data(df)
     print(f"  Loaded {len(df)} work orders.")
 
     # Step 3: AI triage
-    print("\n[3/4] Running AI triage...")
+    print("\n[3/3] Running AI triage...")
     df = triage_work_orders(df)
 
-    # Step 4: Save enriched XLSX
-    print("\n[4/4a] Saving enriched file...")
+    # Save enriched XLSX
+    print("\nSaving enriched file...")
     save_to_xlsx(df, OUTPUT_PATH, OUTPUT_SHEET)
 
-    # Step 5: Sync to Railway
-    print("\n[4/4b] Syncing to Railway...")
-    sync_to_railway(df)
-
-    print("\nDone.")
+    print("\nDone. Run sync_workorders.py to sync this file to Railway.")
 
 
 if __name__ == "__main__":

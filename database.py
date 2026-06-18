@@ -38,9 +38,32 @@ def init_db():
             source TEXT,
             days_open INTEGER,
             ai_priority INTEGER,
-            ai_reason TEXT
+            ai_reason TEXT,
+            access_notes TEXT,
+            full_description TEXT,
+            caller_name TEXT,
+            caller_phone TEXT,
+            caller_email TEXT,
+            tech_name TEXT,
+            ai_summary TEXT
         )
     """)
+
+    new_columns = [
+        ("access_notes",     "TEXT"),
+        ("full_description", "TEXT"),
+        ("caller_name",      "TEXT"),
+        ("caller_phone",     "TEXT"),
+        ("caller_email",     "TEXT"),
+        ("tech_name",        "TEXT"),
+        ("ai_summary",       "TEXT"),
+    ]
+    for col_name, col_type in new_columns:
+        try:
+            c.execute(f"ALTER TABLE work_orders ADD COLUMN {col_name} {col_type}")
+        except Exception:
+            pass  # column already exists
+
     conn.commit()
     conn.close()
 

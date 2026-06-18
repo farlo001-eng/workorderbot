@@ -199,3 +199,80 @@ WARNINGS
 --------
   - None new. The exposed OpenAI key warning from the previous log entry
     still applies and has not been resolved.
+
+----------------------------------------------------------------------
+
+WorkOrderBot — New Fields Build Log
+=====================================
+Date: 2026-06-18
+
+FILES MODIFIED
+---------------
+  database.py        — Added 7 new columns (access_notes, full_description,
+                        caller_name, caller_phone, caller_email, tech_name,
+                        ai_summary) to the CREATE TABLE statement, plus
+                        ALTER TABLE ... ADD COLUMN calls (wrapped in
+                        try/except) so existing databases pick up the new
+                        columns without losing data.
+  harvest_sync.py     — Added PROPERTIES_XLSX_PATH / PROPERTIES_MAP,
+                        normalize_code(), load_properties_map(), and
+                        enrich_with_property_data() to join property_name
+                        and tech_name onto each row from Properties.xlsx.
+                        Added generate_ai_summary() (GPT-4o-mini, one
+                        sentence, max 20 words) and wired it into
+                        triage_work_orders() so every row gets a summary,
+                        including rows resolved by the EMERGENCY_KEYWORDS/
+                        RISKY_WORDS rule-based shortcut. main() now loads
+                        PROPERTIES_MAP once at the top (empty dict with a
+                        warning if Properties.xlsx is missing/unreadable)
+                        and calls enrich_with_property_data() right after
+                        load_open_work_orders().
+  sync_workorders.py  — Added access_notes, full_description, caller_name,
+                        caller_phone, caller_email, tech_name, and
+                        ai_summary to the parsed work-order dict. Changed
+                        property_name lookup from the old raw Yardi column
+                        "Property Name" to the new lowercase "property_name"
+                        column (now written by harvest_sync.py's enrichment
+                        step instead of coming directly from Yardi).
+  app.py              — Added the same 7 fields to both the UPDATE SET
+                        clause and the INSERT column list/VALUES in
+                        /workorders/sync, with matching params tuples.
+
+DEVIATION FROM SPEC
+--------------------
+  The task asked to update sync_to_railway() inside harvest_sync.py with
+  the new fields. That function doesn't exist anymore — it was removed in
+  the previous session at the user's request to separate "download from
+  Yardi" (harvest_sync.py) from "sync to Railway" (sync_workorders.py).
+  The new fields were instead added to sync_workorders.py's field mapping,
+  since that script is now the one that actually POSTs to Railway. Flagged
+  this to the user before making the change.
+
+ASSUMPTIONS & NOTES
+--------------------
+1. "Days Open" computation (logic note 5 in the spec) was already present
+   in load_open_work_orders() from earlier work — it already derives Days
+   Open from Call Date when the column isn't in the export. No change was
+   needed there.
+2. PROPERTIES_MAP is a module-level global in harvest_sync.py, set inside
+   main() via `global PROPERTIES_MAP`, matching the literal helper code in
+   the spec (enrich_with_property_data() reads the global directly rather
+   than taking it as a parameter).
+3. "Caller Email " (trailing space) is preserved exactly as the raw Yardi
+   column name in both harvest_sync.py's save_to_xlsx() output and
+   sync_workorders.py's column lookup.
+4. The Employee column is no longer populated for new Yardi-format syncs
+   (the column doesn't exist in the new export); the DB column itself was
+   left in place per the "do not remove" instruction.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run the script (per instructions).
+  - Did not add tests.
+  - No changes to templates (dashboard/workorder) to surface the new
+    fields in the UI — out of scope for this task.
+
+WARNINGS
+--------
+  - None new. The exposed OpenAI key warning from earlier log entries
+    still applies and has not been resolved.
