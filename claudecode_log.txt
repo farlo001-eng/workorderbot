@@ -1,0 +1,65 @@
+WorkOrderBot — Phase 1 Build Log
+=================================
+Date: 2026-06-09
+
+FILES CREATED
+-------------
+  requirements.txt        — Flask, gunicorn, openpyxl, python-dotenv dependencies
+  Procfile                — gunicorn startup command for Railway
+  .gitignore              — Excludes .env, *.db, __pycache__, *.pyc, *.pyo, *.log
+  .env                    — Local secrets (NOT committed; excluded by .gitignore)
+  database.py             — SQLite init + get_db() / init_db() helpers
+  app.py                  — Flask app with all 7 routes (pages, API, sync)
+  sync_workorders.py      — Excel reader + Railway POST script
+  run_sync_workorders.bat — Task Scheduler batch runner, logs to sync_log.txt
+  templates\dashboard.html — Phase 1 placeholder for manager dashboard
+  templates\workorder.html — Phase 1 placeholder for tech PWA
+  static\harvest-logo.jpg  — Minimal 1x1 JPEG placeholder (replace with real logo)
+
+PRE-EXISTING FILES (not modified)
+----------------------------------
+  Properties.xlsx
+  SampleWO.xlsx
+
+ASSUMPTIONS & NOTES
+--------------------
+1. Excel date parsing: parse_date() handles three input types:
+   - int/float  → treated as Excel serial date (epoch: Dec 30, 1899)
+   - datetime   → formatted directly with strftime
+   - string     → stripped and returned as-is
+   The offset used is +693594-1 (standard xlrd/openpyxl epoch correction).
+
+2. Employee column values assumed to be short keys ("asmith", "dhall", "morton")
+   matching the tech_key field in /api/properties. If Yardi exports full names
+   instead (e.g. "Antonio Smith"), the /api/workorders?employee= filter will need
+   to match on full name, not tech_key.
+
+3. "Technician Notes" column from Yardi is NOT mapped in sync_workorders.py —
+   the sync endpoint intentionally preserves whatever tech_notes already exist
+   in the DB (field-entered by the tech via the PWA). The Yardi export column
+   was excluded by design.
+
+4. The "Amount" and "Call Date Parsed" columns from the Yardi export are present
+   in the header list but not mapped to any DB field — they are silently ignored
+   during sync.
+
+5. harvest-logo.jpg in static\ is a 1x1 JPEG placeholder. Replace with the real
+   Harvest Property Management logo before deploying.
+
+6. No virtual environment was created per instructions.
+
+DEFERRED / FUTURE PHASES
+--------------------------
+  Phase 2 — AI prioritization (ai_priority, ai_reason population via Claude)
+  Phase 3 — Tech PWA (templates\workorder.html full implementation)
+  Phase 4 — Manager Dashboard (templates\dashboard.html full implementation)
+  Phase 5 — Photo upload support (populate photos field)
+
+WARNINGS
+--------
+  - RAILWAY_URL in .env is set to placeholder "https://REPLACE_ME.up.railway.app"
+    and must be updated before running sync_workorders.py.
+  - sync_workorders.py uses the `requests` library which is not in requirements.txt
+    (it is a dependency of Flask and available in the Railway environment, but
+    should be added explicitly if running sync locally outside a venv:
+    pip install requests).
