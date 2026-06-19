@@ -422,3 +422,73 @@ WARNINGS
 --------
   - None new. The exposed OpenAI key warning from earlier log entries
     still applies and has not been resolved.
+
+----------------------------------------------------------------------
+
+WorkOrderBot — Pending Changes Tracking + Export Build Log
+==============================================================
+Date: 2026-06-19
+
+FILES MODIFIED / CREATED
+--------------------------
+  database.py            — Added pending_changes table (id, wo_id, field,
+                            old_value, new_value, changed_at, changed_by,
+                            status default 'pending', pushed_at).
+  app.py                 — /api/workorder/update now SELECTs the existing
+                            status/tech_notes/photos/time_log before
+                            applying the UPDATE, then inserts one
+                            pending_changes row per tracked field whose
+                            stringified value actually changed. Added
+                            GET /api/changes/export (API-key gated, joins
+                            pending_changes to work_orders for
+                            property_name/unit_number/brief_desc/tech_name,
+                            only 'pending' rows) and POST
+                            /api/changes/mark_complete (API-key gated,
+                            bulk-marks a list of ids 'completed' with a
+                            pushed_at timestamp).
+  templates\workorder.html — Added a persistent "You are:" identity bar
+                            inside the list view header (between
+                            header-top and the tabs), backed by
+                            localStorage (key "wo_identity") via
+                            setIdentity()/loadIdentity(). loadIdentity()
+                            is called at page init alongside
+                            loadWorkOrders(). saveChanges() now sends
+                            changed_by (currentIdentity or "Unknown") and
+                            shows a confirm() prompt — not a hard block —
+                            if no identity is selected when Save is
+                            pressed.
+  export_changes.py (NEW) — Fetches GET /api/changes/export from Railway,
+                            writes rows into WO_Changes.xlsx (created with
+                            Pending + Completed sheets if it doesn't
+                            exist), moves any existing Pending rows to
+                            Completed before writing the new batch, then
+                            calls POST /api/changes/mark_complete with the
+                            ids that were just written. If marking
+                            complete fails, the rows stay 'pending' in
+                            Railway and will be picked up by the next run.
+
+LOGIC NOTES (from spec, confirmed in implementation)
+-------------------------------------------------------
+  1. pending_changes rows are only written when old_value != new_value
+     (string-compared), so opening a WO and hitting Save without changing
+     anything produces no rows.
+  2. tech_notes/photos protection on Yardi sync (/workorders/sync) was not
+     touched — only /api/workorder/update (the tech-facing save path) now
+     also writes to pending_changes.
+  3. changed_by is whatever the PWA's identity selector sends, defaulting
+     to "Unknown" — it is not derived from the employee/tech_name columns.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run any scripts (per instructions).
+  - No test files added.
+  - Yardi sync logic (/workorders/sync, harvest_sync.py) untouched.
+
+WARNINGS
+--------
+  - None new. The exposed OpenAI key warning from earlier log entries
+    still applies and has not been resolved.
+  - This session was interrupted partway through by a tool/environment
+    outage (all file reads and shell commands failed for a period); no
+    files were modified during the outage, and work resumed cleanly once
+    tools recovered.

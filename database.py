@@ -66,6 +66,20 @@ def init_db():
         except Exception:
             pass  # column already exists
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pending_changes (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            wo_id         TEXT,
+            field         TEXT,
+            old_value     TEXT,
+            new_value     TEXT,
+            changed_at    TEXT,
+            changed_by    TEXT,
+            status        TEXT DEFAULT 'pending',
+            pushed_at     TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 

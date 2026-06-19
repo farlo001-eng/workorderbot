@@ -27,6 +27,31 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
 .tab { flex: 1; text-align: center; font-size: 13px; padding: 10px 4px; color: #666; border-bottom: 2px solid transparent; cursor: pointer; }
 .tab.active { color: #185FA5; border-bottom: 2px solid #185FA5; font-weight: 500; }
 
+#tech-identity-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #F0F7FF;
+    border-bottom: 0.5px solid #C5DEFF;
+}
+.tech-identity-label {
+    font-size: 12px;
+    color: #185FA5;
+    white-space: nowrap;
+    font-weight: 500;
+}
+#identity-select {
+    flex: 1;
+    padding: 6px 8px;
+    border: 0.5px solid #85B7EB;
+    border-radius: 8px;
+    font-size: 12px;
+    background: white;
+    color: #1a1a1a;
+    font-family: 'Inter', sans-serif;
+}
+
 #tech-selector { background: white; padding: 10px 16px; border-bottom: 0.5px solid #E0E0E0; }
 #tech-select { width: 100%; padding: 8px; border: 0.5px solid #E0E0E0; border-radius: 8px; font-size: 13px; background: white; }
 
@@ -239,6 +264,15 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
       <span class="logo">🔧 WorkOrderBot</span>
       <span id="wo-count" class="count-badge">— open</span>
     </div>
+    <div id="tech-identity-bar">
+      <span class="tech-identity-label">You are:</span>
+      <select id="identity-select" onchange="setIdentity(this.value)">
+        <option value="">Select your name...</option>
+        <option value="Antonio Smith">Antonio Smith</option>
+        <option value="Daniel Hall">Daniel Hall</option>
+        <option value="Jonathan Morton">Jonathan Morton</option>
+      </select>
+    </div>
     <!-- Tabs -->
     <div class="tabs">
       <div class="tab active" data-tab="all">All work</div>
@@ -424,6 +458,7 @@ let currentWO = null;
 let pendingStatus = '';
 let pendingPhotos = [];
 let pendingTimeLog = [];
+let currentIdentity = '';   // full tech name, e.g. "Antonio Smith"
 
 const STATUS_OPTIONS = [
   'Assigned to Vendor', 'Call', 'Canceled', 'In Progress', 'On Hold',
@@ -793,6 +828,12 @@ function handlePhoto(event) {
 
 async function saveChanges() {
   if (!currentWO) return;
+
+  if (!currentIdentity) {
+    const proceed = confirm("You haven't selected your name. Save anyway?");
+    if (!proceed) return;
+  }
+
   const statusEl = document.getElementById('save-status');
   const photos = [...getExistingPhotos(), ...pendingPhotos];
   const payload = {
@@ -801,6 +842,7 @@ async function saveChanges() {
     tech_notes: document.getElementById('tech-notes-input').value,
     photos: photos,
     time_log: pendingTimeLog,
+    changed_by: currentIdentity || "Unknown",
   };
 
   try {
@@ -849,6 +891,22 @@ function showNewWOForm() {
   alert('New work order form coming soon.');
 }
 
+// --- identity ---
+
+function setIdentity(name) {
+  currentIdentity = name;
+  localStorage.setItem('wo_identity', name);
+}
+
+function loadIdentity() {
+  const saved = localStorage.getItem('wo_identity');
+  if (saved) {
+    currentIdentity = saved;
+    const sel = document.getElementById('identity-select');
+    if (sel) sel.value = saved;
+  }
+}
+
 // --- event wiring ---
 
 document.getElementById('wo-list').addEventListener('click', (e) => {
@@ -885,6 +943,7 @@ document.querySelectorAll('.chip').forEach(chip => {
 
 // --- init ---
 
+loadIdentity();
 loadWorkOrders();
 setInterval(loadWorkOrders, 300000);
 </script>

@@ -117,6 +117,9 @@ def update_workorder():
     conn = get_db()
     c = conn.cursor()
 
+    c.execute("SELECT status, tech_notes, photos, time_log FROM work_orders WHERE id = ?", (wo_id,))
+    existing = c.fetchone()
+
     fields = []
     params = []
 
@@ -144,6 +147,30 @@ def update_workorder():
 
     params.append(wo_id)
     c.execute(f"UPDATE work_orders SET {', '.join(fields)} WHERE id = ?", params)
+
+    changed_by = data.get("changed_by", "Unknown")
+    changed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    tracked_fields = ["status", "tech_notes", "photos", "time_log"]
+    for field in tracked_fields:
+        if field not in data:
+            continue
+        old_val = existing[field] if existing else None
+        new_val = data[field]
+        # Convert new_val to string for comparison if it's a list
+        if isinstance(new_val, list):
+            new_val_str = json.dumps(new_val)
+        else:
+            new_val_str = str(new_val) if new_val is not None else ""
+        old_val_str = str(old_val) if old_val is not None else ""
+        # Only log if value actually changed
+        if new_val_str != old_val_str:
+            c.execute("""
+                INSERT INTO pending_changes
+                (wo_id, field, old_value, new_value, changed_at, changed_by, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending')
+            """, (wo_id, field, old_val_str, new_val_str, changed_at, changed_by))
+
     conn.commit()
     conn.close()
 
@@ -256,6 +283,65 @@ def sync_workorders():
     conn.close()
 
     return jsonify({"success": True, "inserted": inserted, "updated": updated})
+
+
+# --- API: Export pending changes (requires API key) ---
+
+@app.route("/api/changes/export", methods=["GET"])
+def export_changes():
+    api_key = request.headers.get("X-API-Key")
+    if api_key != SYNC_API_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT
+            pc.id,
+            pc.wo_id,
+            pc.field,
+            pc.old_value,
+            pc.new_value,
+            pc.changed_at,
+            pc.changed_by,
+            pc.status,
+            wo.property_name,
+            wo.unit_number,
+            wo.brief_desc,
+            wo.tech_name
+        FROM pending_changes pc
+        LEFT JOIN work_orders wo ON pc.wo_id = wo.id
+        WHERE pc.status = 'pending'
+        ORDER BY pc.changed_at ASC
+    """)
+    rows = c.fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+# --- API: Mark changes as completed (requires API key) ---
+
+@app.route("/api/changes/mark_complete", methods=["POST"])
+def mark_changes_complete():
+    api_key = request.headers.get("X-API-Key")
+    if api_key != SYNC_API_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.json
+    ids = data.get("ids", [])
+    if not ids:
+        return jsonify({"error": "No ids provided"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    pushed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.executemany(
+        "UPDATE pending_changes SET status = 'completed', pushed_at = ? WHERE id = ?",
+        [(pushed_at, id_) for id_ in ids]
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "marked": len(ids)})
 
 
 # --- API: Properties reference list ---
