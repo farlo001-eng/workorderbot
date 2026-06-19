@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import base64
 from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory
 from dotenv import load_dotenv
@@ -13,6 +14,10 @@ SYNC_API_KEY = os.getenv("SYNC_API_KEY", "harvest-workorder-2026-secure-key")
 
 # Initialize DB on startup
 init_db()
+
+# Create photos directory on startup
+PHOTOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photos")
+os.makedirs(PHOTOS_DIR, exist_ok=True)
 
 
 # --- Page routes ---
@@ -175,6 +180,37 @@ def update_workorder():
     conn.close()
 
     return jsonify({"success": True})
+
+
+# --- API: Upload a work order photo (saved to disk, not the DB) ---
+
+@app.route("/api/workorder/photo", methods=["POST"])
+def upload_photo():
+    data = request.json
+    if not data or "wo_id" not in data or "image" not in data:
+        return jsonify({"error": "Missing wo_id or image"}), 400
+
+    wo_id = str(data["wo_id"]).strip()
+    image_data = data["image"]
+
+    # Strip base64 header if present (e.g. "data:image/jpeg;base64,...")
+    if "," in image_data:
+        image_data = image_data.split(",", 1)[1]
+
+    # Generate filename (microseconds included so rapid uploads don't collide)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")[:19]
+    filename = f"WO#{wo_id}_{timestamp}.jpg"
+    filepath = os.path.join(PHOTOS_DIR, filename)
+
+    # Decode and save
+    try:
+        with open(filepath, "wb") as f:
+            f.write(base64.b64decode(image_data))
+    except Exception as e:
+        return jsonify({"error": f"Failed to save photo: {e}"}), 500
+
+    # Return the relative path for storage in DB
+    return jsonify({"success": True, "path": f"photos/{filename}"})
 
 
 # --- API: Sync from Yardi (requires API key) ---
@@ -391,6 +427,11 @@ def logo():
 @app.route("/manifest.json")
 def manifest():
     return send_from_directory("static", "manifest.json")
+
+
+@app.route("/photos/<path:filename>")
+def serve_photo(filename):
+    return send_from_directory(PHOTOS_DIR, filename)
 
 
 if __name__ == "__main__":

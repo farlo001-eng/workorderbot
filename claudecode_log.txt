@@ -492,3 +492,86 @@ WARNINGS
     outage (all file reads and shell commands failed for a period); no
     files were modified during the outage, and work resumed cleanly once
     tools recovered.
+
+----------------------------------------------------------------------
+
+WorkOrderBot — Photo File Storage + 3 Photo Limit Build Log
+===============================================================
+Date: 2026-06-19
+
+FILES MODIFIED
+---------------
+  .gitignore  — Added `photos/` so uploaded tech photos (runtime,
+                user-generated content) never get committed, matching how
+                *.db is already excluded. Not explicitly requested, but a
+                direct and necessary consequence of writing real files to
+                disk under the project folder.
+  app.py      — Added `import base64` to the top-level imports (rather
+                than importing inside the request handler). Creates
+                PHOTOS_DIR (./photos) on startup via os.makedirs(...,
+                exist_ok=True). Added POST /api/workorder/photo: decodes a
+                base64 image (stripping the data: URL header if present),
+                writes it to PHOTOS_DIR as
+                "WO#{wo_id}_{timestamp}.jpg" where timestamp is
+                strftime("%Y%m%d_%H%M%S%f")[:19] (microsecond-resolution,
+                per logic note 6, so multiple photos uploaded in the same
+                save action don't collide), and returns the relative path
+                "photos/<filename>". Added GET /photos/<path:filename> to
+                serve files from PHOTOS_DIR. /api/workorder/update was not
+                touched — it already stores whatever array is sent in
+                "photos", per the spec.
+  templates\workorder.html — Added MAX_PHOTOS = 3. Rewrote handlePhoto()
+                to check existing + pending photo count before reading a
+                new file, alerting and bailing out at the limit.
+                renderPhotoThumbs() now takes no arguments (reads
+                currentWO/pendingPhotos itself), shows a "{n} / 3 photos"
+                count, renders existing photos as file-path <img> tags and
+                pending photos as base64 previews, and calls the new
+                updatePhotoAddButton() (hides the camera button via
+                display:none/flex, not visibility, once at MAX_PHOTOS).
+                saveChanges() now uploads each pending base64 photo to
+                /api/workorder/photo first, collects the returned paths,
+                merges them with the existing file paths, and only then
+                POSTs /api/workorder/update with the combined photos
+                array; the Save button shows "Saving..." and is disabled
+                for the duration, and the status message now
+                auto-dismisses after 3 seconds. Time log, status dropdown,
+                and identity bar were not touched, per the DO NOT list.
+
+DEVIATION FROM SPEC (BUG FIX)
+--------------------------------
+  The filename format "WO#{wo_id}_{timestamp}.jpg" contains a literal "#",
+  which is the URL fragment delimiter — a browser builds
+  `<img src="/photos/WO#123_....jpg">`, and only sends "/photos/WO" to the
+  server, silently treating "#123_....jpg" as a fragment that's never part
+  of the actual request. Every existing photo would have failed to load.
+  Added encodePhotoPath(path), which percent-encodes each "/"-separated
+  path segment (so "#" becomes "%23"), and used it when building the
+  <img src="/${...}"> for existing photos in renderPhotoThumbs(). The
+  on-disk filename itself is unchanged — "#" is valid in Windows
+  filenames — only the URL construction needed fixing. Flask/Werkzeug
+  decodes %23 back to "#" automatically when matching
+  <path:filename>, so /api/workorder/photo's save path and
+  serve_photo()'s lookup both still use the literal "#" filename.
+
+LOGIC NOTES (from spec, confirmed in implementation)
+-------------------------------------------------------
+  1. Photos are local-disk only; this does not persist across Railway
+     redeploys (ephemeral filesystem). Left as-is per the spec — flagged
+     here again as a known future-work item (cloud storage), not
+     something this task was meant to fix.
+  2. /api/workorder/photo is intentionally not API-key gated — it's the
+     tech-facing PWA's own upload endpoint, not the Yardi sync path.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run the app (per instructions).
+  - No test files added.
+  - Time log section, status dropdown, tech identity bar, and Yardi sync
+    logic unchanged, per the DO NOT list.
+
+WARNINGS
+--------
+  - None new beyond the encodePhotoPath fix described above. The exposed
+    OpenAI key warning from earlier log entries still applies and has not
+    been resolved.

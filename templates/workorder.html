@@ -150,6 +150,7 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
 
 #tech-notes-input { width: 100%; border: 0.5px solid #E0E0E0; border-radius: 8px; padding: 10px; font-size: 13px; background: white; color: #1a1a1a; resize: none; height: 80px; font-family: 'Inter', sans-serif; }
 
+.photo-count { font-size: 11px; color: #888; margin-bottom: 6px; }
 .photo-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .photo-thumb { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; border: 0.5px solid #E0E0E0; }
 .photo-add { width: 60px; height: 60px; border-radius: 8px; border: 1.5px dashed #C0C0C0; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; }
@@ -465,6 +466,8 @@ const STATUS_OPTIONS = [
   'Request Reassignment', 'Scheduled', 'Waiting on Parts', 'Web', 'Work Completed',
 ];
 
+const MAX_PHOTOS = 3;
+
 // --- helpers ---
 
 function isEmptyValue(v) {
@@ -546,6 +549,13 @@ function getExistingPhotos() {
   } catch (e) {
     return [];
   }
+}
+
+function encodePhotoPath(path) {
+  // Filenames contain a literal "#" (e.g. "photos/WO#123_....jpg"), which is a
+  // URL fragment delimiter — browsers strip everything after it before the
+  // request is sent unless each path segment is percent-encoded.
+  return String(path).split('/').map(encodeURIComponent).join('/');
 }
 
 // --- data loading ---
@@ -642,9 +652,36 @@ function renderList() {
 
 // --- detail view ---
 
-function renderPhotoThumbs(photos) {
-  document.getElementById('photo-thumbs').innerHTML =
-    photos.map(p => `<img class="photo-thumb" src="${p}">`).join('');
+function renderPhotoThumbs() {
+  const container = document.getElementById('photo-thumbs');
+  const existing = getExistingPhotos();
+  const total = existing.length + pendingPhotos.length;
+
+  let html = `<div class="photo-count">${total} / ${MAX_PHOTOS} photos</div>`;
+  html += '<div class="photo-row">';
+
+  // Existing photos (file paths)
+  existing.forEach(path => {
+    html += `<img src="/${encodePhotoPath(path)}" class="photo-thumb" />`;
+  });
+
+  // Pending photos (base64 previews)
+  pendingPhotos.forEach(b64 => {
+    html += `<img src="${b64}" class="photo-thumb" />`;
+  });
+
+  html += '</div>';
+  container.innerHTML = html;
+  updatePhotoAddButton();
+}
+
+function updatePhotoAddButton() {
+  const existingCount = getExistingPhotos().length;
+  const totalCount = existingCount + pendingPhotos.length;
+  const addBtn = document.querySelector('.photo-add');
+  if (addBtn) {
+    addBtn.style.display = totalCount >= MAX_PHOTOS ? 'none' : 'flex';
+  }
 }
 
 function openDetail(wo) {
@@ -735,7 +772,7 @@ function openDetail(wo) {
   document.getElementById('status-select').value = pendingStatus;
 
   document.getElementById('tech-notes-input').value = wo.tech_notes || '';
-  renderPhotoThumbs(getExistingPhotos());
+  renderPhotoThumbs();
   loadTimeLog(wo);
 
   document.getElementById('save-status').style.display = 'none';
@@ -814,16 +851,26 @@ function deleteTimeEntry(index) {
   renderTimeLog();
 }
 
-function handlePhoto(event) {
+async function handlePhoto(event) {
   const file = event.target.files[0];
   if (!file) return;
+
+  const existingCount = getExistingPhotos().length;
+  const totalCount = existingCount + pendingPhotos.length;
+
+  if (totalCount >= MAX_PHOTOS) {
+    alert('Maximum 3 photos allowed per work order.');
+    event.target.value = '';
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = () => {
-    pendingPhotos.push(reader.result);
-    renderPhotoThumbs([...getExistingPhotos(), ...pendingPhotos]);
+    pendingPhotos.push(reader.result);  // base64 for preview
+    renderPhotoThumbs();
   };
   reader.readAsDataURL(file);
-  event.target.value = '';
+  event.target.value = '';  // reset input so same file can be re-selected
 }
 
 async function saveChanges() {
@@ -835,17 +882,37 @@ async function saveChanges() {
   }
 
   const statusEl = document.getElementById('save-status');
-  const photos = [...getExistingPhotos(), ...pendingPhotos];
-  const payload = {
-    id: currentWO.id,
-    status: pendingStatus,
-    tech_notes: document.getElementById('tech-notes-input').value,
-    photos: photos,
-    time_log: pendingTimeLog,
-    changed_by: currentIdentity || "Unknown",
-  };
+  const saveBtn = document.querySelector('.save-btn');
+  saveBtn.textContent = 'Saving...';
+  saveBtn.disabled = true;
 
   try {
+    // Upload any pending photos first
+    const uploadedPaths = [];
+    for (const b64 of pendingPhotos) {
+      const resp = await fetch('/api/workorder/photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wo_id: currentWO.id, image: b64 }),
+      });
+      const result = await resp.json();
+      if (result.success && result.path) {
+        uploadedPaths.push(result.path);
+      }
+    }
+
+    // Combine existing file paths + newly uploaded paths
+    const allPhotos = [...getExistingPhotos(), ...uploadedPaths];
+
+    const payload = {
+      id: currentWO.id,
+      status: pendingStatus,
+      tech_notes: document.getElementById('tech-notes-input').value,
+      photos: allPhotos,
+      time_log: pendingTimeLog,
+      changed_by: currentIdentity || "Unknown",
+    };
+
     const res = await fetch('/api/workorder/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -856,21 +923,27 @@ async function saveChanges() {
 
     currentWO.status = payload.status;
     currentWO.tech_notes = payload.tech_notes;
-    currentWO.photos = photos;
+    currentWO.photos = allPhotos;
     currentWO.time_log = payload.time_log;
-    pendingPhotos = [];
-    renderPhotoThumbs(photos);
 
     const idx = allWorkOrders.findIndex(w => String(w.id) === String(currentWO.id));
     if (idx !== -1) allWorkOrders[idx] = currentWO;
 
-    statusEl.textContent = 'Saved!';
+    // Clear pending photos — they've been uploaded
+    pendingPhotos = [];
+    renderPhotoThumbs();
+
+    statusEl.textContent = '✓ Saved successfully';
     statusEl.style.color = '#3B6D11';
     statusEl.style.display = 'block';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
   } catch (e) {
-    statusEl.textContent = 'Error saving. Try again.';
+    statusEl.textContent = '✗ Error saving. Try again.';
     statusEl.style.color = '#A32D2D';
     statusEl.style.display = 'block';
+  } finally {
+    saveBtn.textContent = 'Save changes';
+    saveBtn.disabled = false;
   }
 }
 
