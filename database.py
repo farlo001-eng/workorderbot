@@ -45,7 +45,8 @@ def init_db():
             caller_phone TEXT,
             caller_email TEXT,
             tech_name TEXT,
-            ai_summary TEXT
+            ai_summary TEXT,
+            time_log TEXT
         )
     """)
 
@@ -57,6 +58,7 @@ def init_db():
         ("caller_email",     "TEXT"),
         ("tech_name",        "TEXT"),
         ("ai_summary",       "TEXT"),
+        ("time_log",         "TEXT"),
     ]
     for col_name, col_type in new_columns:
         try:

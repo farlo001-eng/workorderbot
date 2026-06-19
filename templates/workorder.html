@@ -52,6 +52,13 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
 .badge-call { background: #EAF3DE; color: #3B6D11; }
 .badge-web { background: #F1EFE8; color: #5F5E5A; }
 .badge-nan { background: #FAECE7; color: #993C1D; }
+.badge-work_completed { background: #EAF3DE; color: #3B6D11; }
+.badge-canceled { background: #F1EFE8; color: #5F5E5A; }
+.badge-on_hold { background: #FAEEDA; color: #854F0B; }
+.badge-waiting_on_parts { background: #FAEEDA; color: #854F0B; }
+.badge-scheduled { background: #E6F1FB; color: #185FA5; }
+.badge-assigned_to_vendor { background: #EEEDFE; color: #534AB7; }
+.badge-request_reassignment { background: #FAECE7; color: #993C1D; }
 
 .wo-desc { font-size: 13px; font-weight: 500; color: #1a1a1a; margin-bottom: 5px; line-height: 1.3; }
 .wo-brief { font-size: 11px; color: #888; margin-bottom: 4px; font-style: italic; }
@@ -99,17 +106,124 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
 .access-label { font-size: 11px; color: #854F0B; font-weight: 500; margin-bottom: 4px; }
 .access-text { font-size: 12px; color: #633806; line-height: 1.5; }
 
-.status-row { display: flex; gap: 6px; }
-.status-btn { flex: 1; padding: 8px 4px; border-radius: 8px; border: 0.5px solid #E0E0E0; font-size: 12px; text-align: center; color: #666; background: white; cursor: pointer; }
-.status-btn.active-open { background: #FAECE7; color: #993C1D; border-color: #F0997B; font-weight: 500; }
-.status-btn.active-in_progress { background: #E6F1FB; color: #185FA5; border-color: #85B7EB; font-weight: 500; }
-.status-btn.active-complete { background: #EAF3DE; color: #3B6D11; border-color: #97C459; font-weight: 500; }
+#status-select {
+    width: 100%;
+    padding: 10px;
+    border: 0.5px solid #E0E0E0;
+    border-radius: 8px;
+    font-size: 13px;
+    background: white;
+    color: #1a1a1a;
+    font-family: 'Inter', sans-serif;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+}
 
 #tech-notes-input { width: 100%; border: 0.5px solid #E0E0E0; border-radius: 8px; padding: 10px; font-size: 13px; background: white; color: #1a1a1a; resize: none; height: 80px; font-family: 'Inter', sans-serif; }
 
 .photo-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .photo-thumb { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; border: 0.5px solid #E0E0E0; }
 .photo-add { width: 60px; height: 60px; border-radius: 8px; border: 1.5px dashed #C0C0C0; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; }
+
+.time-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.time-field {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.time-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.time-field input {
+    padding: 8px;
+    border: 0.5px solid #E0E0E0;
+    border-radius: 8px;
+    font-size: 12px;
+    background: white;
+    color: #1a1a1a;
+    font-family: 'Inter', sans-serif;
+    width: 100%;
+    box-sizing: border-box;
+}
+.time-log-btn {
+    width: 100%;
+    padding: 9px;
+    background: white;
+    color: #185FA5;
+    border: 0.5px solid #85B7EB;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 8px;
+    font-family: 'Inter', sans-serif;
+}
+.time-add-btn {
+    flex: 1;
+    padding: 9px;
+    background: #185FA5;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+}
+.time-cancel-btn {
+    flex: 1;
+    padding: 9px;
+    background: white;
+    color: #666;
+    border: 0.5px solid #E0E0E0;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+}
+.time-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 0.5px solid #F0F0F0;
+    font-size: 12px;
+    color: #333;
+}
+.time-entry:last-child {
+    border-bottom: none;
+}
+.time-entry-text {
+    line-height: 1.5;
+}
+.time-entry-delete {
+    font-size: 16px;
+    color: #ccc;
+    cursor: pointer;
+    padding: 0 4px;
+    flex-shrink: 0;
+}
+.time-entry-delete:hover {
+    color: #E24B4A;
+}
+.time-empty {
+    font-size: 12px;
+    color: #aaa;
+    font-style: italic;
+    padding: 4px 0 8px;
+}
 
 .save-btn { width: 100%; padding: 13px; background: #185FA5; color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: 500; cursor: pointer; }
 .save-btn:active { background: #0C447C; }
@@ -221,17 +335,61 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
     <!-- Status selector -->
     <div class="section-card">
       <div class="section-label">Status</div>
-      <div class="status-row">
-        <div class="status-btn" data-status="open" onclick="setStatus('open')">Open</div>
-        <div class="status-btn" data-status="in_progress" onclick="setStatus('in_progress')">In progress</div>
-        <div class="status-btn" data-status="complete" onclick="setStatus('complete')">Complete</div>
-      </div>
+      <select id="status-select" onchange="setStatus(this.value)">
+        <option value="Assigned to Vendor">Assigned to Vendor</option>
+        <option value="Call">Call</option>
+        <option value="Canceled">Canceled</option>
+        <option value="In Progress">In Progress</option>
+        <option value="On Hold">On Hold</option>
+        <option value="Request Reassignment">Request Reassignment</option>
+        <option value="Scheduled">Scheduled</option>
+        <option value="Waiting on Parts">Waiting on Parts</option>
+        <option value="Web">Web</option>
+        <option value="Work Completed">Work Completed</option>
+      </select>
     </div>
 
     <!-- Tech notes -->
     <div class="section-card">
       <div class="section-label">Tech notes</div>
       <textarea id="tech-notes-input" placeholder="Add notes here…"></textarea>
+    </div>
+
+    <!-- Time log -->
+    <div class="section-card" id="time-log-section">
+      <div class="section-label">Time log</div>
+      <div id="time-log-list">
+        <!-- Existing entries injected by JS -->
+      </div>
+      <div id="add-time-form" style="display:none">
+        <div class="time-row">
+          <div class="time-field">
+            <label class="time-label">Start date</label>
+            <input type="date" id="start-date-input" />
+          </div>
+          <div class="time-field">
+            <label class="time-label">Start time</label>
+            <input type="time" id="start-time-input" />
+          </div>
+        </div>
+        <div class="time-row">
+          <div class="time-field">
+            <label class="time-label">End date</label>
+            <input type="date" id="end-date-input" />
+          </div>
+          <div class="time-field">
+            <label class="time-label">End time</label>
+            <input type="time" id="end-time-input" />
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="time-add-btn" onclick="confirmAddTime()">Add entry</button>
+          <button class="time-cancel-btn" onclick="cancelAddTime()">Cancel</button>
+        </div>
+      </div>
+      <button class="time-log-btn" id="show-add-time-btn" onclick="showAddTimeForm()">
+        + Add time
+      </button>
     </div>
 
     <!-- Photos -->
@@ -265,6 +423,12 @@ let currentTech = '';
 let currentWO = null;
 let pendingStatus = '';
 let pendingPhotos = [];
+let pendingTimeLog = [];
+
+const STATUS_OPTIONS = [
+  'Assigned to Vendor', 'Call', 'Canceled', 'In Progress', 'On Hold',
+  'Request Reassignment', 'Scheduled', 'Waiting on Parts', 'Web', 'Work Completed',
+];
 
 // --- helpers ---
 
@@ -272,6 +436,12 @@ function isEmptyValue(v) {
   if (v === null || v === undefined) return true;
   const s = String(v).trim().toLowerCase();
   return s === '' || s === 'nan' || s === 'none' || s === 'null';
+}
+
+function parseTimeLog(val) {
+  if (!val || val === '[]') return [];
+  if (Array.isArray(val)) return val;
+  try { return JSON.parse(val); } catch (e) { return []; }
 }
 
 function escapeHtml(str) {
@@ -297,11 +467,6 @@ function normalizeStatus(status) {
   return s.replace(/\s+/g, '_');
 }
 
-function statusButtonValue(status) {
-  const s = normalizeStatus(status);
-  return (s === 'in_progress' || s === 'complete') ? s : 'open';
-}
-
 function statusLabel(status) {
   const map = {
     open: 'Open',
@@ -309,9 +474,21 @@ function statusLabel(status) {
     complete: 'Complete',
     call: 'Call',
     web: 'Web',
+    assigned_to_vendor: 'Assigned to Vendor',
+    canceled: 'Canceled',
+    on_hold: 'On Hold',
+    request_reassignment: 'Request Reassignment',
+    scheduled: 'Scheduled',
+    waiting_on_parts: 'Waiting on Parts',
+    work_completed: 'Work Completed',
   };
   const s = normalizeStatus(status);
   return map[s] || 'Open';
+}
+
+function isCompleteStatus(status) {
+  const s = normalizeStatus(status);
+  return s === 'complete' || s === 'work_completed' || s === 'canceled';
 }
 
 function priorityNumber(p) {
@@ -394,14 +571,14 @@ function renderList() {
   let list = allWorkOrders.slice();
 
   if (currentTab === 'all') {
-    list = list.filter(wo => normalizeStatus(wo.status) !== 'complete');
+    list = list.filter(wo => !isCompleteStatus(wo.status));
   } else if (currentTab === 'mine') {
-    list = list.filter(wo => normalizeStatus(wo.status) !== 'complete');
+    list = list.filter(wo => !isCompleteStatus(wo.status));
     if (currentTech) {
       list = list.filter(wo => wo.tech_name === currentTech);
     }
   } else if (currentTab === 'complete') {
-    list = list.filter(wo => normalizeStatus(wo.status) === 'complete');
+    list = list.filter(wo => isCompleteStatus(wo.status));
   }
 
   if (currentFilter !== 'all') {
@@ -429,14 +606,6 @@ function renderList() {
 }
 
 // --- detail view ---
-
-function highlightStatusButtons(status) {
-  const buttonValue = statusButtonValue(status);
-  document.querySelectorAll('.status-btn').forEach(btn => {
-    const btnStatus = btn.getAttribute('data-status');
-    btn.className = 'status-btn' + (btnStatus === buttonValue ? ` active-${btnStatus}` : '');
-  });
-}
 
 function renderPhotoThumbs(photos) {
   document.getElementById('photo-thumbs').innerHTML =
@@ -525,10 +694,14 @@ function openDetail(wo) {
     aiBox.style.display = 'none';
   }
 
-  highlightStatusButtons(pendingStatus);
+  if (!STATUS_OPTIONS.includes(pendingStatus)) {
+    pendingStatus = 'In Progress';
+  }
+  document.getElementById('status-select').value = pendingStatus;
 
   document.getElementById('tech-notes-input').value = wo.tech_notes || '';
   renderPhotoThumbs(getExistingPhotos());
+  loadTimeLog(wo);
 
   document.getElementById('save-status').style.display = 'none';
 
@@ -537,7 +710,73 @@ function openDetail(wo) {
 
 function setStatus(status) {
   pendingStatus = status;
-  highlightStatusButtons(status);
+}
+
+function loadTimeLog(wo) {
+  pendingTimeLog = parseTimeLog(wo.time_log);
+  renderTimeLog();
+}
+
+function renderTimeLog() {
+  const listEl = document.getElementById('time-log-list');
+  if (pendingTimeLog.length === 0) {
+    listEl.innerHTML = '<div class="time-empty">No time entries yet.</div>';
+    return;
+  }
+  listEl.innerHTML = pendingTimeLog.map((entry, index) => `
+    <div class="time-entry">
+      <div class="time-entry-text">
+        <strong>${escapeHtml(entry.start_date || '—')} ${escapeHtml(entry.start_time || '—')}</strong> → ${escapeHtml(entry.end_date || '—')} ${escapeHtml(entry.end_time || '—')}
+      </div>
+      <span class="time-entry-delete" onclick="deleteTimeEntry(${index})">✕</span>
+    </div>
+  `).join('');
+}
+
+function showAddTimeForm() {
+  document.getElementById('show-add-time-btn').style.display = 'none';
+  document.getElementById('add-time-form').style.display = 'block';
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+
+  document.getElementById('start-date-input').value = today;
+  document.getElementById('start-time-input').value = `${hh}:${mm}`;
+  document.getElementById('end-date-input').value = '';
+  document.getElementById('end-time-input').value = '';
+}
+
+function cancelAddTime() {
+  document.getElementById('add-time-form').style.display = 'none';
+  document.getElementById('show-add-time-btn').style.display = 'block';
+}
+
+function confirmAddTime() {
+  const startDate = document.getElementById('start-date-input').value;
+  const startTime = document.getElementById('start-time-input').value;
+  const endDate = document.getElementById('end-date-input').value;
+  const endTime = document.getElementById('end-time-input').value;
+
+  if (!startDate || !startTime) {
+    alert('Start date and start time are required.');
+    return;
+  }
+
+  pendingTimeLog.push({
+    start_date: startDate,
+    start_time: startTime,
+    end_date: endDate,
+    end_time: endTime,
+  });
+  renderTimeLog();
+  cancelAddTime();
+}
+
+function deleteTimeEntry(index) {
+  pendingTimeLog.splice(index, 1);
+  renderTimeLog();
 }
 
 function handlePhoto(event) {
@@ -561,6 +800,7 @@ async function saveChanges() {
     status: pendingStatus,
     tech_notes: document.getElementById('tech-notes-input').value,
     photos: photos,
+    time_log: pendingTimeLog,
   };
 
   try {
@@ -575,6 +815,7 @@ async function saveChanges() {
     currentWO.status = payload.status;
     currentWO.tech_notes = payload.tech_notes;
     currentWO.photos = photos;
+    currentWO.time_log = payload.time_log;
     pendingPhotos = [];
     renderPhotoThumbs(photos);
 

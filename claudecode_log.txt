@@ -342,3 +342,83 @@ WARNINGS
 --------
   - None new. The exposed OpenAI key warning from earlier log entries
     still applies and has not been resolved.
+
+----------------------------------------------------------------------
+
+WorkOrderBot — Status Dropdown + Time Log Build Log
+======================================================
+Date: 2026-06-18
+
+FILES MODIFIED
+---------------
+  database.py        — Added time_log column (CREATE TABLE + ALTER TABLE
+                        fallback, same pattern as the other new_columns).
+  app.py              — /workorders/sync INSERT now includes time_log
+                        (default '[]'); the UPDATE branch deliberately does
+                        NOT touch time_log, same rule as tech_notes/photos,
+                        so a tech's logged hours are never clobbered by a
+                        Yardi re-sync. /api/workorder/update now accepts
+                        and JSON-encodes a time_log field.
+  templates\workorder.html — Replaced the 3-button status selector with a
+                        <select id="status-select"> using the 10 Yardi
+                        status values. Added a Time Log section (between
+                        Tech notes and Photos) with an entry list, an
+                        "+ Add time" button that reveals a start/end
+                        date+time form, and per-entry delete. Added
+                        7 new badge-* classes for the new statuses, plus
+                        the dropdown chevron CSS and all the time-log CSS.
+
+JS CHANGES
+----------
+  - Removed highlightStatusButtons() and statusButtonValue() (dead code —
+    the buttons they targeted no longer exist). setStatus(status) is now
+    just `pendingStatus = status`.
+  - Added isCompleteStatus(status): normalizes status and treats
+    'complete' (legacy), 'work_completed', and 'canceled' as
+    complete-equivalent. renderList()'s All/Mine/Complete tab filters now
+    use this instead of a direct `=== 'complete'` check.
+  - statusLabel()'s map gained the 7 new statuses (assigned_to_vendor,
+    canceled, on_hold, request_reassignment, scheduled, waiting_on_parts,
+    work_completed) so badges show the correct text, not a fallback "Open".
+    normalizeStatus() itself was left unchanged, per the spec.
+  - openDetail(): if the work order's stored status isn't one of the 10
+    dropdown options (e.g. legacy lowercase "open"/"complete"/"in_progress"
+    from before this change, or "nan"), pendingStatus is reset to
+    'In Progress' and the dropdown is set to that. List-view badges are
+    unaffected since they read the raw wo.status from the API, not
+    pendingStatus — only the editable dropdown snaps to a valid value.
+  - Added pendingTimeLog state, parseTimeLog(), loadTimeLog() (called from
+    openDetail), renderTimeLog(), showAddTimeForm(), cancelAddTime(),
+    confirmAddTime() (requires start date+time, alerts if missing), and
+    deleteTimeEntry(index). saveChanges() now includes time_log in the
+    payload and updates currentWO.time_log on success.
+
+DEVIATIONS / ADDITIONS BEYOND SPEC
+------------------------------------
+  1. app.py's update_workorder() previously only set completed_date when
+     data["status"] == "complete" (lowercase). With the new dropdown
+     sending "Work Completed", that check would never fire again, silently
+     breaking completed_date tracking. Changed the condition to
+     `str(data["status"]).strip().lower() in ("complete", "work completed")`
+     so both the legacy value and the new dropdown value work. This wasn't
+     in the spec's section 2b but is a direct, necessary consequence of
+     changing the status vocabulary.
+  2. When openDetail() defaults a non-matching stored status to
+     'In Progress' for the dropdown, it also overwrites pendingStatus (not
+     just the dropdown's displayed value) to 'In Progress'. The spec's
+     literal one-liner only described the dropdown's .value; defaulting
+     just the display while leaving pendingStatus at the old unmatched
+     value would let a tech hit Save without touching the dropdown and
+     silently write back a status that didn't match what was on screen.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run the app (per instructions).
+  - Save button position/behavior, photo handling, and list view cards
+    unchanged, per the DO NOT list.
+  - No new API endpoints added.
+
+WARNINGS
+--------
+  - None new. The exposed OpenAI key warning from earlier log entries
+    still applies and has not been resolved.

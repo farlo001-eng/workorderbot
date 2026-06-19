@@ -123,7 +123,7 @@ def update_workorder():
     if "status" in data:
         fields.append("status = ?")
         params.append(data["status"])
-        if data["status"] == "complete":
+        if str(data["status"]).strip().lower() in ("complete", "work completed"):
             fields.append("completed_date = ?")
             params.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -134,6 +134,10 @@ def update_workorder():
     if "photos" in data:
         fields.append("photos = ?")
         params.append(json.dumps(data["photos"]))
+
+    if "time_log" in data:
+        fields.append("time_log = ?")
+        params.append(json.dumps(data["time_log"]))
 
     if not fields:
         return jsonify({"error": "No fields to update"}), 400
@@ -231,8 +235,8 @@ def sync_workorders():
                  employee, actual_start, actual_finish, actual_hours, tech_notes, photos,
                  source, days_open, ai_priority, ai_reason,
                  access_notes, full_description, caller_name, caller_phone, caller_email,
-                 tech_name, ai_summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '[]', 'yardi', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 tech_name, ai_summary, time_log)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '[]', 'yardi', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 wo_id, wo.get("property_code"), wo.get("property_name"),
                 wo.get("unit_number"), wo.get("description"), wo.get("brief_desc"),
@@ -244,7 +248,7 @@ def sync_workorders():
                 wo.get("access_notes"), wo.get("full_description"),
                 wo.get("caller_name"), wo.get("caller_phone"),
                 wo.get("caller_email"), wo.get("tech_name"),
-                wo.get("ai_summary")
+                wo.get("ai_summary"), wo.get("time_log", "[]")
             ))
             inserted += 1
 
