@@ -8,9 +8,11 @@ Run with: py export_changes.py
 """
 
 import os
+import json
 import requests
 import openpyxl
 from datetime import datetime
+from urllib.parse import quote
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,13 +21,15 @@ RAILWAY_URL  = os.getenv("RAILWAY_URL", "").rstrip("/")
 SYNC_API_KEY = os.getenv("SYNC_API_KEY", "harvest-workorder-2026-secure-key")
 OUTPUT_PATH  = r"I:\PycharmProjects\WorkOrderBot\WO_Changes.xlsx"
 
+LOCAL_PHOTOS_DIR = r"G:\Harvest Apartment Management\Work Orders\Photos"
+
 PENDING_SHEET   = "Pending"
 COMPLETED_SHEET = "Completed"
 
 HEADERS = [
     "Change ID", "WO#", "Property", "Unit", "Brief Desc",
     "Field Changed", "Old Value", "New Value",
-    "Changed By", "Changed At", "Assigned Tech"
+    "Changed By", "Changed At", "Assigned Tech", "Local Photo Paths"
 ]
 
 
@@ -72,7 +76,74 @@ def get_or_create_sheet(wb: openpyxl.Workbook, name: str) -> openpyxl.worksheet.
     return ws
 
 
-def change_to_row(change: dict) -> list:
+def download_photos(changes: list) -> dict:
+    """
+    For any pending change rows where field == 'photos',
+    download the photo files from Railway to LOCAL_PHOTOS_DIR.
+    Skips files that already exist locally.
+    Returns a dict mapping original Railway path -> local file path.
+    """
+    os.makedirs(LOCAL_PHOTOS_DIR, exist_ok=True)
+
+    downloaded = {}
+    headers = {"X-API-Key": SYNC_API_KEY}
+
+    for change in changes:
+        if change.get("field") != "photos":
+            continue
+
+        # new_value is a JSON array of photo paths like ["photos/WO#123_....jpg", ...]
+        try:
+            photo_paths = json.loads(change.get("new_value", "[]"))
+            if not isinstance(photo_paths, list):
+                continue
+        except Exception:
+            continue
+
+        for path in photo_paths:
+            if not path or path in downloaded:
+                continue
+
+            # Extract filename from path (e.g. "photos/WO#30583_20260619_143022123.jpg")
+            filename = os.path.basename(path)
+            local_path = os.path.join(LOCAL_PHOTOS_DIR, filename)
+
+            # Skip if already downloaded
+            if os.path.exists(local_path):
+                downloaded[path] = local_path
+                print(f"  Photo already exists locally: {filename}")
+                continue
+
+            # Download from Railway — URL-encode the filename to handle the # character
+            encoded_filename = quote(filename, safe='')
+            url = f"{RAILWAY_URL}/photos/{encoded_filename}"
+
+            try:
+                resp = requests.get(url, headers=headers, timeout=30, stream=True)
+                resp.raise_for_status()
+                with open(local_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                downloaded[path] = local_path
+                print(f"  Downloaded photo: {filename} → {local_path}")
+            except requests.exceptions.RequestException as e:
+                print(f"  WARNING: Could not download photo {filename}: {e}")
+
+    return downloaded
+
+
+def change_to_row(change: dict, downloaded: dict = None) -> list:
+    local_paths = ""
+    if change.get("field") == "photos" and downloaded:
+        try:
+            photo_paths = json.loads(change.get("new_value", "[]"))
+            if isinstance(photo_paths, list):
+                local_paths = "; ".join(
+                    downloaded.get(p, "") for p in photo_paths if downloaded.get(p)
+                )
+        except Exception:
+            pass
+
     return [
         change.get("id"),
         change.get("wo_id"),
@@ -85,6 +156,7 @@ def change_to_row(change: dict) -> list:
         change.get("changed_by", ""),
         change.get("changed_at", ""),
         change.get("tech_name", ""),
+        local_paths,
     ]
 
 
@@ -106,6 +178,15 @@ def main():
 
     print(f"Found {len(changes)} pending change(s).")
 
+    # Download any photos referenced in pending changes
+    downloaded = {}
+    if any(c.get("field") == "photos" for c in changes):
+        print(f"\nDownloading photos to {LOCAL_PHOTOS_DIR}...")
+        downloaded = download_photos(changes)
+        print(f"Downloaded {len(downloaded)} photo(s).")
+    else:
+        print("No photo changes to download.")
+
     wb = load_or_create_workbook(OUTPUT_PATH)
     ws_pending   = get_or_create_sheet(wb, PENDING_SHEET)
     ws_completed = get_or_create_sheet(wb, COMPLETED_SHEET)
@@ -126,7 +207,7 @@ def main():
     # Write new pending changes to Pending sheet
     ids_to_mark = []
     for change in changes:
-        ws_pending.append(change_to_row(change))
+        ws_pending.append(change_to_row(change, downloaded))
         ids_to_mark.append(change["id"])
 
     wb.save(OUTPUT_PATH)

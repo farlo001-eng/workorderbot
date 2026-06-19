@@ -213,6 +213,33 @@ def upload_photo():
     return jsonify({"success": True, "path": f"photos/{filename}"})
 
 
+# --- API: List photo paths for a work order ---
+
+@app.route("/api/workorder/photos", methods=["GET"])
+def get_photos():
+    wo_id = request.args.get("wo_id")
+    if not wo_id:
+        return jsonify({"error": "Missing wo_id"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT photos FROM work_orders WHERE id = ?", (wo_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row or not row["photos"]:
+        return jsonify({"photos": []})
+
+    try:
+        photos = json.loads(row["photos"])
+        if not isinstance(photos, list):
+            photos = []
+    except Exception:
+        photos = []
+
+    return jsonify({"photos": photos})
+
+
 # --- API: Sync from Yardi (requires API key) ---
 
 @app.route("/workorders/sync", methods=["POST"])

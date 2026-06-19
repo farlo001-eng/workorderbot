@@ -575,3 +575,86 @@ WARNINGS
   - None new beyond the encodePhotoPath fix described above. The exposed
     OpenAI key warning from earlier log entries still applies and has not
     been resolved.
+
+----------------------------------------------------------------------
+
+WorkOrderBot — Photo Download via Export Script Build Log
+=============================================================
+Date: 2026-06-19
+
+FILES MODIFIED
+---------------
+  app.py             — Added GET /api/workorder/photos?wo_id=... returning
+                        {"photos": [...]} parsed from the work order's
+                        photos column (empty list on missing row, missing
+                        photos, or unparseable/non-list JSON). The existing
+                        GET /photos/<path:filename> route already served
+                        individual files, so no new file-serving endpoint
+                        was needed for that part.
+  export_changes.py  — Added LOCAL_PHOTOS_DIR
+                        ("G:\Harvest Apartment Management\Work Orders\Photos"),
+                        a new "Local Photo Paths" column in HEADERS, and
+                        download_photos(changes): for every pending change
+                        row with field == 'photos', parses the JSON array
+                        of Railway paths in new_value, and for each path
+                        not already downloaded, GETs
+                        {RAILWAY_URL}/photos/<percent-encoded filename>
+                        (matching the encodePhotoPath() fix already in the
+                        PWA, since filenames contain a literal "#") and
+                        streams it to LOCAL_PHOTOS_DIR, skipping files that
+                        already exist locally. change_to_row() now takes
+                        an optional `downloaded` dict and joins the local
+                        paths for a photos-field row with "; ". main()
+                        calls download_photos() once, right after fetching
+                        changes and before writing to Excel, only when at
+                        least one pending change has field == 'photos'.
+                        Moved the `json`, `urllib.parse.quote` imports (and
+                        the base64-style local-import pattern this spec
+                        used inline) to the top of the file instead of
+                        importing inside each function — consistent with
+                        the same cleanup done for `base64` in app.py last
+                        session.
+
+DEVIATION FROM SPEC (BUG FIX)
+--------------------------------
+  The spec's main() only assigned `downloaded = download_photos(changes)`
+  inside the `if any(... field == 'photos' ...)` branch, with no
+  assignment in the `else` branch. Since `downloaded` is then passed to
+  change_to_row(change, downloaded) for every row — including non-photo
+  rows, which are the common case — the `else` path would have raised an
+  UnboundLocalError the first time a batch of pending changes contained no
+  photo-field rows. Fixed by initializing `downloaded = {}` before the
+  if/else, which preserves the spec's intended behavior (empty dict when
+  there's nothing to download) without crashing.
+
+LOGIC NOTES (from spec, confirmed in implementation)
+-------------------------------------------------------
+  1. Photo downloads only happen for field == 'photos' rows; status,
+     tech_notes, and time_log changes are unaffected.
+  2. download_photos() sends the X-API-Key header on the /photos/<file>
+     request even though that route isn't currently key-gated, so the
+     header is already in place if that route gets locked down later.
+  3. Existing local files (matched by filename) are skipped rather than
+     re-downloaded, so re-running export_changes.py before the Yardi
+     writeback completes is safe.
+  4. LOCAL_PHOTOS_DIR is created automatically (os.makedirs(...,
+     exist_ok=True)) inside download_photos().
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Did not run any scripts (per instructions).
+  - No test files added.
+  - /api/workorder/photo (upload), workorder.html, harvest_sync.py, and
+    the pending_changes table/sync logic were not touched, per the DO NOT
+    list.
+
+WARNINGS
+--------
+  - None new. The exposed OpenAI key warning from earlier log entries
+    still applies and has not been resolved.
+  - Per logic note 6 in the spec: if Railway redeploys between a tech
+    uploading a photo and export_changes.py running, the photo will be
+    gone from Railway's ephemeral filesystem and download_photos() will
+    print a WARNING and skip it. No code change addresses this — it's
+    flagged as a known operational risk, same as in the previous photo
+    storage task.
