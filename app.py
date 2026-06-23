@@ -342,10 +342,19 @@ def sync_workorders():
             ))
             inserted += 1
 
+    # Hard wipe: delete any WO not present in this sync payload
+    if work_orders:
+        incoming_ids = [str(wo.get("id", "")).strip() for wo in work_orders if wo.get("id")]
+        placeholders = ",".join("?" * len(incoming_ids))
+        c.execute(f"DELETE FROM work_orders WHERE id NOT IN ({placeholders}) AND source = 'yardi'", incoming_ids)
+        deleted = c.rowcount
+    else:
+        deleted = 0
+
     conn.commit()
     conn.close()
 
-    return jsonify({"success": True, "inserted": inserted, "updated": updated})
+    return jsonify({"success": True, "inserted": inserted, "updated": updated, "deleted": deleted})
 
 
 # --- API: Export pending changes (requires API key) ---
