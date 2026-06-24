@@ -60,6 +60,56 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
 .chip { font-size: 11px; padding: 5px 12px; border-radius: 20px; border: 0.5px solid #E0E0E0; color: #666; background: white; white-space: nowrap; cursor: pointer; }
 .chip.active { background: #E6F1FB; color: #185FA5; border-color: #85B7EB; }
 
+#filter-bar { background: #f5f5f0; border-bottom: 1px solid #e0e0d8; padding: 7px 10px; display: flex; gap: 6px; }
+.mini-filter {
+    flex: 1;
+    position: relative;
+    background: #ffffff;
+    border: 1px solid #d0d0c8;
+    border-radius: 6px;
+    padding: 4px 6px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    overflow: hidden;
+}
+.mini-filter.active {
+    border-color: #378ADD;
+    background: #f0f7ff;
+}
+.mini-filter-label {
+    font-size: 9px;
+    color: #888;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.mini-filter-select {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    font-size: 16px;
+}
+.mini-filter-val {
+    font-size: 9px;
+    font-weight: 500;
+    color: #1a1a2e;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mini-filter.active .mini-filter-val {
+    color: #185FA5;
+}
+.mini-chev {
+    font-size: 8px;
+    color: #aaa;
+    flex-shrink: 0;
+}
+
 .wo-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; padding-bottom: 80px; }
 
 .wo-card { background: white; border-radius: 12px; border: 0.5px solid #E0E0E0; padding: 10px 12px; cursor: pointer; border-left-width: 3px; }
@@ -279,6 +329,42 @@ body { font-family: 'Inter', sans-serif; background: #F5F5F5; max-width: 480px; 
       <div class="tab active" data-tab="all">All work</div>
       <div class="tab" data-tab="mine">My properties</div>
       <div class="tab" data-tab="complete">Complete</div>
+    </div>
+  </div>
+
+  <!-- Mini filter bar: property / tech / status — stacks additively with the tabs and priority chips below -->
+  <div id="filter-bar">
+    <div class="mini-filter" id="filter-property-wrap">
+      <span class="mini-filter-label">Property</span>
+      <span class="mini-filter-val" id="filter-property-val">All</span>
+      <select id="filter-property" class="mini-filter-select">
+        <option value="">All</option>
+      </select>
+      <span class="mini-chev">▾</span>
+    </div>
+    <div class="mini-filter" id="filter-tech-wrap">
+      <span class="mini-filter-label">Tech</span>
+      <span class="mini-filter-val" id="filter-tech-val">All</span>
+      <select id="filter-tech" class="mini-filter-select">
+        <option value="">All</option>
+        <option value="Antonio Smith">Antonio</option>
+        <option value="Daniel Hall">Daniel</option>
+        <option value="Jonathan Morton">Jonathan</option>
+      </select>
+      <span class="mini-chev">▾</span>
+    </div>
+    <div class="mini-filter" id="filter-status-wrap">
+      <span class="mini-filter-label">Status</span>
+      <span class="mini-filter-val" id="filter-status-val">All</span>
+      <select id="filter-status" class="mini-filter-select">
+        <option value="">All</option>
+        <option value="Open">Open</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Complete">Complete</option>
+        <option value="On Hold">On Hold</option>
+        <option value="Cancelled">Cancelled</option>
+      </select>
+      <span class="mini-chev">▾</span>
     </div>
   </div>
 
@@ -565,10 +651,62 @@ async function loadWorkOrders() {
   try {
     const res = await fetch('/api/workorders');
     allWorkOrders = await res.json();
-    renderList();
+    populatePropertyFilter(allWorkOrders);
+    // Re-apply any saved property filter now that its <option> exists in the DOM.
+    restoreFilterState();
+    applyFiltersAndRender();
   } catch (e) {
     listEl.innerHTML = '<div class="empty-state">Failed to load work orders.</div>';
   }
+}
+
+// --- mini filter bar (property / tech / status) ---
+
+function populatePropertyFilter(workOrders) {
+  const select = document.getElementById('filter-property');
+  const existing = Array.from(select.options).map(o => o.value);
+  const names = [...new Set(workOrders.map(wo => wo.property_name).filter(Boolean))].sort();
+  names.forEach(name => {
+    if (!existing.includes(name)) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name.length > 18 ? name.slice(0, 17) + '…' : name;
+      select.appendChild(opt);
+    }
+  });
+}
+
+function restoreFilterState() {
+  const saved = JSON.parse(localStorage.getItem('wo_filters') || '{}');
+  if (saved.property) document.getElementById('filter-property').value = saved.property;
+  if (saved.tech)     document.getElementById('filter-tech').value = saved.tech;
+  if (saved.status)   document.getElementById('filter-status').value = saved.status;
+  updateFilterValDisplays();
+}
+
+function updateFilterValDisplays() {
+  ['property', 'tech', 'status'].forEach(key => {
+    const sel = document.getElementById('filter-' + key);
+    const valEl = document.getElementById('filter-' + key + '-val');
+    const wrap = document.getElementById('filter-' + key + '-wrap');
+    if (!sel || !valEl || !wrap) return;
+    const selected = sel.options[sel.selectedIndex];
+    const label = selected ? selected.text : 'All';
+    valEl.textContent = label.length > 10 ? label.slice(0, 9) + '…' : label;
+    wrap.classList.toggle('active', !!sel.value);
+  });
+}
+
+function matchesStatusFilter(wo, filterValue) {
+  if (!filterValue) return true;
+  // The mini-filter options (Open/In Progress/Complete/On Hold/Cancelled) are a
+  // simplified view of the raw Yardi status strings, so route through the
+  // existing normalizeStatus/isCompleteStatus helpers instead of a literal
+  // string match — there is no raw status that is ever literally "Complete",
+  // and Yardi spells it "Canceled" (one L) where this filter says "Cancelled".
+  if (filterValue === 'Complete') return isCompleteStatus(wo.status);
+  if (filterValue === 'Cancelled') return normalizeStatus(wo.status) === 'canceled';
+  return normalizeStatus(wo.status) === normalizeStatus(filterValue);
 }
 
 // --- list rendering ---
@@ -612,7 +750,7 @@ function renderCard(wo) {
   `;
 }
 
-function renderList() {
+function applyFiltersAndRender() {
   let list = allWorkOrders.slice();
 
   if (currentTab === 'all') {
@@ -631,6 +769,23 @@ function renderList() {
     list = list.filter(wo => priorityNumber(wo.ai_priority) === f);
   }
 
+  // Baseline count (tab + priority chip applied) — used as the "Y" in "Showing X of Y".
+  const baselineCount = list.length;
+
+  const propertyFilter = document.getElementById('filter-property').value;
+  const techFilter = document.getElementById('filter-tech').value;
+  const statusFilter = document.getElementById('filter-status').value;
+
+  if (propertyFilter) {
+    list = list.filter(wo => wo.property_name === propertyFilter);
+  }
+  if (techFilter) {
+    list = list.filter(wo => wo.tech_name === techFilter);
+  }
+  if (statusFilter) {
+    list = list.filter(wo => matchesStatusFilter(wo, statusFilter));
+  }
+
   list.sort((a, b) => {
     const ap = sortKeyPriority(a.ai_priority);
     const bp = sortKeyPriority(b.ai_priority);
@@ -640,11 +795,16 @@ function renderList() {
 
   filteredOrders = list;
 
-  document.getElementById('wo-count').textContent = `${list.length} open`;
+  document.getElementById('wo-count').textContent = `Showing ${list.length} of ${baselineCount} work orders`;
 
   const listEl = document.getElementById('wo-list');
   if (list.length === 0) {
-    listEl.innerHTML = '<div class="empty-state">No work orders found.</div>';
+    listEl.innerHTML = `
+      <p style="text-align:center; color:#888; margin-top: 40px; font-size: 13px;">
+        No work orders match the current filters.
+        <br><a href="#" id="clear-filters-link" style="color:#185FA5;">Clear filters</a>
+      </p>
+    `;
     return;
   }
   listEl.innerHTML = list.map(renderCard).join('');
@@ -952,7 +1112,7 @@ async function saveChanges() {
 function showListView() {
   document.getElementById('detail-view').style.display = 'none';
   document.getElementById('list-view').style.display = 'block';
-  renderList();
+  applyFiltersAndRender();
 }
 
 function showDetailView() {
@@ -983,6 +1143,17 @@ function loadIdentity() {
 // --- event wiring ---
 
 document.getElementById('wo-list').addEventListener('click', (e) => {
+  const clearLink = e.target.closest('#clear-filters-link');
+  if (clearLink) {
+    e.preventDefault();
+    ['property', 'tech', 'status'].forEach(key => {
+      document.getElementById('filter-' + key).value = '';
+    });
+    localStorage.removeItem('wo_filters');
+    updateFilterValDisplays();
+    applyFiltersAndRender();
+    return;
+  }
   const card = e.target.closest('.wo-card');
   if (!card) return;
   const id = card.getAttribute('data-id');
@@ -996,13 +1167,13 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     currentTab = tab.getAttribute('data-tab');
     document.getElementById('tech-selector').style.display = currentTab === 'mine' ? 'block' : 'none';
-    renderList();
+    applyFiltersAndRender();
   });
 });
 
 document.getElementById('tech-select').addEventListener('change', (e) => {
   currentTech = e.target.value;
-  renderList();
+  applyFiltersAndRender();
 });
 
 document.querySelectorAll('.chip').forEach(chip => {
@@ -1010,7 +1181,20 @@ document.querySelectorAll('.chip').forEach(chip => {
     document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     currentFilter = chip.getAttribute('data-filter');
-    renderList();
+    applyFiltersAndRender();
+  });
+});
+
+['property', 'tech', 'status'].forEach(key => {
+  document.getElementById('filter-' + key).addEventListener('change', function() {
+    const filters = {
+      property: document.getElementById('filter-property').value,
+      tech:     document.getElementById('filter-tech').value,
+      status:   document.getElementById('filter-status').value,
+    };
+    localStorage.setItem('wo_filters', JSON.stringify(filters));
+    updateFilterValDisplays();
+    applyFiltersAndRender();
   });
 });
 

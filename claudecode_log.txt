@@ -658,3 +658,104 @@ WARNINGS
     print a WARNING and skip it. No code change addresses this — it's
     flagged as a known operational risk, same as in the previous photo
     storage task.
+
+WorkOrderBot — Property/Tech/Status Filter Dropdowns Build Log
+==================================================================
+Date: 2026-06-24
+
+FILES CHANGED
+-------------
+  templates\workorder.html — only file touched.
+    - New #filter-bar block (Property / Tech / Status mini dropdowns)
+      inserted directly below the .header div, above the existing
+      "My properties" tab's tech-selector and the priority chip row.
+      Independent/additive — the existing tab + priority-chip logic
+      was left untouched, per the DO NOT list.
+    - New CSS: #filter-bar, .mini-filter(.active), .mini-filter-label,
+      .mini-filter-select, .mini-filter-val, .mini-chev.
+    - New JS: populatePropertyFilter(), restoreFilterState(),
+      updateFilterValDisplays(), matchesStatusFilter().
+    - Renamed renderList() -> applyFiltersAndRender() (it already did
+      exactly this job — tab filter, priority-chip filter, sort,
+      render — so it was extended in place rather than duplicated) and
+      updated every call site (tab click, tech-select change, chip
+      click, showListView, and the three new filter selects).
+    - Subheader (#wo-count) now reads "Showing X of Y work orders". Y
+      is the count after the existing tab + priority-chip filtering
+      (the same set the user is already looking at); X is the count
+      after the three new filters are additionally applied. Not fully
+      specified in the brief; picked this baseline because using the
+      grand total across all tabs (incl. completed/cancelled WOs)
+      produced confusing numbers on the Complete tab.
+    - Empty state now shows the "No work orders match the current
+      filters / Clear filters" markup whenever the post-filter list is
+      empty; the link is wired via event delegation on the existing
+      #wo-list click listener (stable parent, so no per-render
+      listener attachment is needed).
+    - localStorage key "wo_filters" persists {property, tech, status}
+      and is restored inside loadWorkOrders(), after
+      populatePropertyFilter() runs and before the first render —
+      restoring earlier (e.g. at top-level script init) would silently
+      fail for a saved property value, since the matching <option>
+      doesn't exist in the DOM until the work orders have loaded.
+
+ASSUMPTIONS / DEVIATIONS FROM SPEC
+-------------------------------------
+  1. Tech field name: spec said wo.assigned_tech ("use the exact field
+     name from the data"). Grepped app.py/database.py/
+     sync_workorders.py — the real field is tech_name, not
+     assigned_tech. Used tech_name everywhere (matches what the
+     existing My-properties filter already uses).
+
+  2. Status filter matching: spec said `wo.status === selectedValue`
+     (literal equality). Checked WorkOrders.xlsx and the app's own
+     STATUS_OPTIONS list — the raw status field never literally
+     contains "Open", "Complete", or "Cancelled" (Yardi/the status
+     dropdown use "Work Completed" and "Canceled" with one L; "Open"
+     is only the fallback label for a blank/nan status). Literal
+     equality would have made the Open/Complete/Cancelled filter
+     options permanently return zero results. Routed matching through
+     the app's existing normalizeStatus()/isCompleteStatus() helpers
+     via a new matchesStatusFilter():
+       - "Complete"  -> isCompleteStatus(wo.status) (same bucket the
+                         "Complete" tab already uses: Work Completed +
+                         Canceled)
+       - "Cancelled" -> normalizeStatus(wo.status) === 'canceled'
+       - otherwise   -> normalizeStatus(wo.status) ===
+                         normalizeStatus(filterValue)
+     The dropdown's visible options/labels are unchanged from the spec.
+
+  3. "Call restoreFilterState() once on page load, before the first
+     render": called once, but from inside loadWorkOrders() rather
+     than top-level script init — see the localStorage note above.
+     Still "once, before the first render"; just relocated for
+     correctness against the dynamically-populated Property options.
+
+VERIFICATION
+------------
+  No existing automated tests cover this view. Verified end-to-end
+  with a headless Chrome (Selenium) session against a local Flask dev
+  server seeded with sample work orders (seed data/DB were temporary
+  and local only — *.db is gitignored, nothing committed):
+    - Filter bar renders below header, above tabs/chips; detail view,
+      sync logic, and the My-properties toggle are undisturbed.
+    - Each filter applies additively on top of tab + chip filtering;
+      subheader updates to "Showing X of Y work orders"; active
+      filters highlight blue.
+    - localStorage persists filters across a full page reload.
+    - A zero-result combination shows the "Clear filters" empty state;
+      clicking it resets all three selects, clears localStorage, and
+      restores the list.
+    - Status filter verified for all 5 options (Open/In Progress/
+      Complete/On Hold/Cancelled) against rows with real Yardi-style
+      status strings, confirming the normalizeStatus-based matching
+      (assumption 2 above) is necessary — literal string equality
+      matched nothing for 3 of 5 options.
+
+STEPS SKIPPED / DEFERRED
+-------------------------
+  - Detail/edit view, sync logic, and backend endpoints were not
+    touched, per the DO NOT list.
+  - No test files added; no scripts run against production data (the
+    seeded DB used for manual verification was local-only and
+    deleted afterward).
